@@ -1,0 +1,429 @@
+AI Customer Support Agent 
+
+1. Overview
+
+1.1 Problem
+
+Businesses across every industry need round-the-clock customer support but cannot staff it economically. Human teams are slow on repetitive questions (order status, warranty, "where's my refund"), inconsistent across languages, and expensive to scale. Most existing bots are rigid decision-trees that frustrate customers and dump everything on a human anyway.
+
+1.2 Solution
+
+A SaaS AI Customer Support Agent that any business can sign up for, point at its own knowledge (docs, FAQs, URLs), embed a chat widget on its site, and have an AI resolve customer questions in real time, 24×7, in the customer's language automatically opening tickets, answering order/warranty queries, and escalating to a human only when it should.
+
+1.3 POC Goal
+
+Prove the end-to-end loop is real and useful for one tenant on one channel: sign up → ingest knowledge → embed widget → AI autonomously resolves a real conversation, creates a ticket, answers an order-status question, and escalates cleanly when it hits its limits across multiple languages.
+
+2. Goals & Success Metrics
+
+2.1 Product goals
+
+A new tenant can go from sign-up to a working embedded widget in under 15 minutes, with no engineering help beyond pasting a snippet.
+The AI resolves common support questions autonomously, grounded in the tenant's own knowledge (no hallucinated answers).
+When the AI cannot or should not answer, it escalates to a human with full context no dead ends, including when no human is currently online (see 4.5.1).
+The same agent works for any industry without code changes, configured purely through content and settings.
+
+2.2 Non-goals
+
+Not building a general chatbot, not optimizing model training/fine-tuning, not handling phone calls, not replacing a full helpdesk suite.
+
+3. Users & Personas
+
+Persona
+Role
+Needs
+End customer
+Person needing support on a tenant's website
+Fast, accurate answers in their preferred language, available 24/7, with an easy path to a human agent if the AI cannot resolve the issue.
+Support agent (Human)
+Tenant's staff handling escalations
+A centralized queue of escalated conversations with complete conversation history and context, along with the ability to respond, resolve, and close tickets.
+Tenant admin
+Business owner or support manager
+Ability to sign up, upload and manage knowledge sources, configure the AI agent, embed the chat widget into their website, and monitor AI performance through analytics and conversation insights.
+Platform operator
+SaaS provider managing the platform
+Manage tenants, monitor platform health and usage, oversee system performance, and control operational costs (minimal functionality required for the POC).
+
+
+
+4. Core Capabilities (the seven pillars + shared mechanism)
+
+Pillars 4.1–4.7 are the seven requested capabilities. They are all built on the single record-lookup mechanism defined in 4.8 (which is the shared design principle, not a separate pillar).
+
+
+4.1 24×7 Real-Time Support
+
+The widget is always live; the AI responds in real time with no business-hours gating.
+Streaming responses (token-by-token) via Server-Sent Events (SSE): the customer POSTs a message, the server opens an SSE stream and relays Claude's tokens as they arrive. SSE (not WebSocket) because the chat is request/response; it is simpler, auto-reconnects, and passes through proxies. When a turn requires a tool call (e.g., a record lookup), a short filler ("let me check that…") streams first so the customer sees activity; tool latency counts against the response-latency budget (§6), and a slow/failed tool triggers a graceful fallback or escalation rather than an indefinite wait.
+Conversation state persists via an anonymous session id (UUID) stored in browser localStorage (survives tab close and reload). A returning customer in the same browser continues the same conversation; the server keeps the Conversation + Message rows keyed by that id. Clearing localStorage / switching device starts a new session (end customers are not authenticated). Session id lifetime is configurable (default 30 days).
+Per-turn timeout guard (default 20s): if Claude or a tool stalls past the timeout, the turn stops and emits the explicit "I'm getting a human" message and escalates this backs the guarantee below.
+Requirement: every inbound message gets an AI response or an explicit "I'm getting a human" within the latency target.
+
+4.2 Ticketing
+
+The ticket model is universally identical for every tenant and industry. Industry differences live in the data (tags + linked record), never in the ticket structure.
+Every conversation is backed by exactly one ticket with a lifecycle: new → ai_handling → escalated → with_agent → resolved → closed, plus reopened.
+The AI creates/updates tickets automatically with no customer action required.
+Each ticket captures: tenant, customer identity (email/name if given, else anonymous session id), channel (web), language, full transcript, tags, status, priority (low/normal/high), assigned agent (if escalated), optional linked record pointer, resolution summary, timestamps.
+Configurable tags (not industry-specific schema): the AI auto-classifies each ticket into tags (e.g. order_status, warranty_claim, appointment_change, billing, complaint). Tag values are tenant-configurable; the schema does not change per industry. Tag mechanism detailed in 4.2.3.
+A conversation that spans multiple intents remains one ticket with multiple tags.
+Optional linked record reference: when a ticket arises from a successful, verified record lookup (4.8), it stores a single nullable pointer {record_type, record_key} (e.g. {order, ORD-10234}) never a copy of the record's fields. The pointer is set only after a verified lookup succeeds (a merely mentioned or unverified/not-found id leaves it null). This is the only touchpoint between the generic ticket and industry-specific data, and it lets the agent re-fetch the live record (current status, not a stale snapshot) anytime the ticket is opened.
+Tickets are searchable and filterable by status, tag, language, date, and (via the tenant) industry in the admin console.
+A ticket can be manually reopened by an agent, and a resolved conversation that the customer re-messages within 72h reopens automatically.
+
+4.2.1 Lifecycle transition rules
+
+
+From State
+To State
+Actor
+Trigger / Description
+new
+ai_handling
+AI
+The first AI response is sent to the customer.
+ai_handling
+resolved
+AI
+The AI determines that the customer's issue has been fully resolved (see Section 4.2.2).
+ai_handling
+escalated
+AI
+An escalation condition is met, requiring human intervention (see Section 4.5).
+escalated
+with_agent
+Support Agent
+A support agent claims the ticket from the escalation queue (with locking mechanism, see Section 5.4).
+with_agent
+resolved
+Support Agent
+The support agent resolves the issue and marks the conversation as resolved.
+resolved
+closed
+System
+The conversation is automatically closed after an idle period (default: 10 minutes).
+resolved / closed
+reopened
+Support Agent or Customer
+The conversation is reopened either by an agent or when the customer sends another message within 72 hours.
+reopened
+ai_handling / with_agent
+System
+The system routes the conversation back to the AI, or directly to the previously assigned agent if the conversation had already been escalated.
+
+
+The AI may perform ONLY the new→ai_handling, ai_handling→resolved, and ai_handling→escalated transitions. All other transitions are agent- or system-only. This whitelist is enforced in code, not by the model (6 security).
+
+4.2.2 Auto-resolve and close triggers
+
+ai_handling → resolved fires when either: (a) the AI, only when its structured per-turn output flags that it delivered a complete answer, asks a closing question ("Did that solve your issue?") and the customer confirms via a thumbsup or an affirmative reply; or (b) the conversation is idle for a configurable period (resolve_after_idle, default 10 min) following an AI answer with no escalation pending. The AI does not nag a closing question after every turn only on a flagged complete answer; the idle fallback catches everyone who simply leaves. A resolution summary is generated on entry to resolved (5.5).
+resolved → closed fires after a further idle period (close_after_idle, default 10 min). "closed" is a status label meaning done it is NOT deletion or archival; the ticket, conversation, and all messages are retained (see 6 retention).
+Reopen: a customer message on the same conversation (same browser) within 72h reopens the ticket from either resolved or closed, and the AI resumes with the full prior transcript already in context (nothing is re-created; same conversation_id). Cross-device reopen is not supported (no customer auth).
+
+
+
+4.2.3 Tag classification (curated list + admin-approved growth)
+
+The AI emits tags[] as one field of its structured per-turn output, so classification happens in the same model call that produces the answer with no separate classification pass, no extra latency/cost.
+Each tenant has a configurable allowed tag list. When the AI returns tags, each is checked against that list. A tag on the list is applied as approved. A tag not on the list is applied as pending (the AI is allowed to propose a net-new tag rather than force-fit) and surfaced in an admin "pending tags" tray.
+The ticket is never untagged while waiting: a proposed tag is applied immediately with status = pending (shown with a "pending review" badge, still filterable), not held back or replaced by a placeholder.
+Admin resolves a pending tag: Approve → the tag becomes approved, is added to the tenant's allowed list, and every ticket carrying that pending tag flips to approved at once (no manual re-tagging). Reject → the tag is removed from the ticket(s), optionally remapped to an existing approved tag.
+Implication: the tag column is a list of {name, status(approved|pending)} objects, not plain strings. Same universal column for every industry only the allowed values differ per tenant.
+
+4.3 Warranty
+
+Retail/e-commerce instance of the generic user-specific record lookup defined in 4.8. 
+
+Features:
+
+Two-path answering. Policy questions ("how long is coverage / what's covered / how do I claim?") are answered by KB/RAG (4.6). "Is my product covered?" is answered by a warranty record lookup. Same AI turn routes the question; the two sources are never mixed.
+Personal warranty lookup via lookup_record. record_type="warranty", keyed by serial_no with order_id accepted as an alias key (many customers do not have their serial but do have their order number; either value resolves the same warranty record). Slot-filling: AI asks for the id → asks for email → calls the tool → answers ONLY from what it returns: coverage (active|expired|void) and expiry. Never invents coverage.
+Identity verification before disclosure. Enforced in code inside lookup_record (4.8.2): email must match (case-insensitive); not_found and unverified return the same "couldn't match those details" message; 3 wrong tries → escalate.
+Coverage-state handling. active → state expiry, offer the claim path. expired → state it expired on <date>; mention paid-repair info only if it is in the KB, else just "expired". void → auto-escalate to a human (dispute-prone/sensitive; the AI states it is void but hands off rather than arguing).
+Claim filing → ticket. For an active warranty where the customer wants to claim, the AI creates/tags the ticket warranty_claim and sets the linked-record pointer {warranty, <serial>}. Claim instructions come from the KB (the tenant's uploaded warranty/claim policy), not from the record: if the KB has claim steps → guide the customer through them; if not → escalate to a human.
+Evidence (photo/receipt) POC limit. Widget is text-only, so we ask for the id alone; any claim requiring a photo/receipt escalates to a human who collects it via email. No in-widget upload for POC (deferred: upload endpoint + storage + scan).
+Grounding guarantee. Warranty status comes from the tool; policy/claim steps from the KB. If neither returns an answer, the AI says it cannot confirm and escalates it never guesses coverage.
+
+4.4 Order Status
+
+Retail/e-commerce instance of the generic user-specific record lookup defined in §4.8 the highest-volume flow. 
+
+Features:
+
+Order lookup via lookup_record. record_type="order", keyed by order_id, verified by email. Slot-filling: AI asks for the order id → asks for email → calls the tool → answers ONLY from what it returns: status, eta, tracking_ref. Never invents delivery info.
+Status reporting. status is one of placed|processing|shipped|delivered|cancelled, phrased naturally per state: placed/processing → "preparing to ship, expected by <eta>"; shipped → status + tracking_ref + eta; delivered → "delivered on <date>"; cancelled → state it is cancelled and answer refund timing from the KB if available, else escalate.
+Identity verification before disclosure. Enforced in code (§4.8.2): email only for the POC (matches the schema). not_found and unverified return the same "couldn't match those details" message so order ids cannot be enumerated; 3 wrong tries → escalate.
+Not-found / can't-match handling. If the id does not resolve, the AI re-asks once ("I couldn't find that can you double-check the order id?") then escalates after the attempt limit. Neutral wording; never confirms whether an id exists.
+"Delivered but not received." Treated as a potential lost-package dispute → auto-escalate to a human (no AI self-help loop).
+Tracking hand-off (optional). If a tracking link is available it is shown as a clickable link; otherwise the raw tracking_ref is shown; if neither is present, nothing extra. The link can come from EITHER a per-record tracking_url field in the order data OR a tenant-configured carrier URL template (https://carrier/track/{tracking_ref}). Both are optional tenants who supply neither simply get no link.
+Grounding guarantee. Order facts come from the tool only; no tool result → the AI says it cannot confirm and escalates. Same no-guessing rule as everywhere.
+
+4.5 Escalation
+
+The safety net behind the "no dead ends" promise. 
+
+Features:
+
+Escalation triggers  the AI hands off when any fires:
+No grounded answer / low confidence - retrieval-driven: no KB chunk clears the relevance threshold AND no tool returned an answer → escalate. Deterministic, not a self-reported confidence number from the model.
+Explicit request - the customer asks for a human/agent (detected as intent).
+Sensitive intent - refund dispute, complaint, legal, cancellation, etc.; tenant-configurable list.
+N failed attempts  same issue unresolved after N tries (configurable, default 3).
+No sentiment detection. Instead, when the AI is struggling (e.g. approaching the failed-attempt limit or unable to help), it PROACTIVELY offers: "Would you like me to connect you to a human agent?" The customer accepts (→ explicit-request escalation) or declines and continues. This avoids mood-scoring and threshold tuning entirely.
+Hand-off mechanics on any trigger: transition(ticket, "escalated", actor="ai") → ticket enters the agent queue; the AI writes an escalation summary (why it escalated + suggested next step); the customer is told a human is taking over; the AI steps back and does not keep answering that conversation.
+The human agent receives a full transcript + AI summary + the KB sources the AI used + suggested reply + the live linked record (re-fetched via the pointer). No re-asking the customer.
+Ownership after hand-off once escalated, the human owns the conversation to resolution; the AI does NOT auto-resume (no ping-ponging between AI and human).
+Tenant config admin toggles which triggers are active and sets the relevance threshold (4.6) and N. After-hours behavior is in 4.5.1. Note: the low-confidence trigger is driven by retrieval grounding (nothing cleared the relevance threshold), not by a self-reported confidence number from the model.
+
+4.5.1 After-hours / no-agent handling
+
+The AI is 24×7 but human agents are not. On escalation the system checks agent availability (Available/Away toggle, 5.4):
+An agent's Available ticket enters the queue, real-time notification, and the customer is told a human is joining.
+No agent is Available → the AI captures the customer's email, sets the ticket to escalated with priority per trigger, and promises follow-up within the tenant's stated SLA (config, default "next business day"). No dead end.
+Escalation also notifies the tenant's support address out-of-band (email) so an unwatched queue does not strand the customer.
+
+4.6 Knowledge Base (KB / RAG)
+
+KB answers general knowledge questions ("what's your return policy?"), the counterpart to record lookup (personal data). 
+
+Features:
+
+Source ingestion (three input types) (a) file upload: PDF, DOCX, TXT, MD; (b) pasted text; (c) a website URL to crawl. Each becomes a Source row with status queued → ingesting → ready | failed. Ingestion runs async (background job) so onboarding never blocks on a large file.
+Chunk → embed → store (RAG pipeline)
+Grounded retrieval with a relevance threshold (the no-hallucination hinge) embeds the customer's query → vector search within the tenant's namespace → take top-k chunks above a similarity threshold. Those chunks are the ONLY material the AI may answer from. If nothing clears the threshold → the AI says it doesn't know and escalates, never guesses. The threshold is configurable per tenant; a concrete default is deferred to implementation/tuning (left unset for now).
+Citation / source linking each chunk carries source metadata, so answers cite where they came from: a clickable link for URL sources, or "from warranty-policy.pdf, p.3" for files. Best-effort; shown when metadata allows.
+Conflicting sources no source-priority system for POC: retrieval surfaces the best-matching chunks, the AI answers from the top-ranked and may note when sources disagree.
+Source management (admin) - view the source list with ingestion status + chunk count; re-ingest (re-crawl a URL / re-parse a file) manually; delete a source (removes its chunks/vectors immediately). Same surface as record-data management. No scheduled auto-refresh for POC refresh is the admin clicking re-ingest.
+URL crawl controls - when a URL is given, the crawler auto-reads that page and follows links to nearby pages, bounded by: same-domain only (never follow off-site links), max depth 2 (page given = depth 0; its links = depth 1; their links = depth 2; stop), respects robots.txt, skips auth-gated pages, JS-heavy pages best-effort.
+Limits & isolation - per-file 25MB; per-tenant total configurable; partial ingestion marks the source failed with an error - never a half-ready silent state. Vector search is partitioned per tenant so a retrieval structurally cannot return another tenant's chunk. Uploaded content is untrusted: retrieved text is data, never instructions (6 prompt-injection).
+
+4.7 Multi-Language
+
+The customer writes in their language and is answered in their language, even when the tenant's knowledge is all in one language. 
+
+Features:
+
+Auto-detect + respond in kind no separate detection step: Model detects the customer's language and replies in it natively in the same call. The detected language (BCP-47, e.g. es, hi) is emitted in the structured per-turn output and stored on the conversation/ticket.
+Supported set + default language (per tenant) - the tenant configures which languages it officially supports (e.g. English, Spanish, French, German, Hindi) and a default language. The underlying model can attempt more, but "supported" governs the widget UI and what is formally tested.
+Unsupported-language behavior: if a customer writes in a language the tenant did NOT configure as supported, the AI replies in the tenant's default language (not the detected one). "Supported list" thus bounds the guaranteed experience.
+Cross-lingual retrieval multilingual embeddings let a customer-language query retrieve chunks from a KB written in another language directly (no translate-then-retrieve). The tenant uploads knowledge once, in one language, and it serves customers in any supported language.
+Records/tools are language-neutral lookup_record returns structured data (status, dates, ids); the AI simply phrases it in the reply language. No translation of the data itself.
+Widget UI localization + RTL - widget chrome (welcome message, "talk to a human", placeholder, consent notice) uses pre-translated strings for the tenant's supported languages, with English as the fallback for anything else; RTL layout flips for RTL languages if configured. (No dynamic per-language UI translation for POC.)
+Short / mixed / code-switched fallback when detection is low-confidence (a one-word "ok", or "gracias thanks"), the AI keeps the conversation's already-established language rather than flip-flopping.
+
+4.8 User-Specific Record Lookup & Industry Templates
+
+The core design principle: separate knowledge from records.
+
+Aspect
+Knowledge Questions
+User-Specific Questions
+Example
+"What's your return policy?"
+"Where's my order?"
+Answered by
+RAG over uploaded KB (4.6)
+Record lookup (this section)
+Source of truth
+KB documents
+Tenant-supplied record dataset
+
+
+
+Orders (4.4) and warranty (4.3) are the retail instances of one generic mechanism. The AI uses a single tool lookup_record(record_type, key, verify) and answers only from what it returns; never invents user data.
+
+Five industry templates for the POC. Each ships a predefined record schema; a tenant picks its industry on onboarding and uploads its own record data against that schema (see 5.1). A tenant belongs to exactly one industry for the POC. Swappable before build.
+
+
+Industry
+Record Type(s)
+Lookup Key
+Verify Field
+Key Fields Returned
+Retail / E-commerce
+order, warranty
+order_id / serial_no
+email
+status, ETA, tracking_ref / coverage, expiry (claim steps from KB)
+Logistics / Courier
+shipment
+tracking_no
+phone or email
+current_location, status, ETA
+Telecom / ISP
+subscription, billing
+account_id
+registered_mobile
+plan, renewal_date, balance_due
+Healthcare / Clinic
+appointment
+booking_ref
+phone or DOB
+date_time, provider, prep_instructions
+Travel / Hospitality
+booking
+booking_ref
+email or last_name
+status, dates, itinerary
+
+
+
+
+
+4.8.1 lookup_record tool contract
+
+Request: { record_type, key, verify: { field, value } }.
+Response - success: { status: "ok", record: { ...only the schema's returned fields } }.
+Response - error (record omitted): { status: "not_found" } (key absent), { status: "unverified" } (key exists but verify mismatch), { status: "invalid_type" } (record_type not valid for this tenant), { status: "rate_limited" } (6).
+Rules: the AI answers only from record; on any non-ok status it does not state record facts it collects the key, re-verifies, or escalates. not_found and unverified get the SAME customer-facing message so an unverified caller cannot learn whether a key exists.
+
+4.8.2 Identity verification (enforced in code)
+
+Disclosure of any returned field requires a matching verified value. Comparison: email case-insensitive exact; phone digits-only; name case-insensitive exact; DOB exact.
+3 failed verify attempts per conversation per key → stop asking and escalate (or offer email-fallback if no agent, 4.5.1). Healthcare: 1 failed attempt → escalate (no retry). No unlimited retry loops.
+Verification is enforced in application code and is never delegated to the model; an instruction (from a customer message or a KB document) to "skip verification" has no effect.
+
+Universal lookup flow (identical across industries):
+
+1. Detect intent → 2. Collect the lookup key (slot filling) → 3. Verify identity via the verify field → 4. Call lookup_record → 5. Answer from the result, or escalate if not-found / unverified.
+
+Requirements:
+
+One generic record-lookup engine; industries differ only by template + uploaded data, not code.
+For the POC, record data is tenant-supplied mock data behind a contract that mirrors a real integration response, so live connectors (Shopify, ISP billing, EHR, etc.) can replace the mock later without redesign.
+Upload rules: CSV or JSON; header/keys must match schema field names exactly; required fields present, types parseable, lookup key unique. Invalid rows are reported; upload fails on key-uniqueness violation. Re-upload = full replacement of that record_type (no row-level merge for POC). Max 50k rows/record_type (log if truncated never silent).
+Identity must be verified before any record details are disclosed (4.8.2).
+Each tenant's record data is strictly isolated from every other tenant's (6).
+
+4.9 Record Data Sources (Upload / API / Database)
+
+The record data behind lookup_record (4.8) can come from three interchangeable source types, chosen by the tenant per record_type. All three return the identical normalized result, so the AI engine, identity verification (4.8.2), grounding, escalation, ticketing, and analytics are completely unchanged regardless of source - the source is invisible above the tool contract.
+
+The three source types
+
+•  Upload - the tenant uploads a CSV/JSON dataset (4.8 upload rules); the platform stores and queries it. Unchanged from the original design; the default and the zero-integration option.
+•  API - the platform calls the tenant's own HTTP endpoint (their app, industry ERP, or any third-party connector) live, per lookup, to fetch the record.
+•  Database - the platform reads the record live, per lookup, directly from the tenant's database.
+
+Resolver dispatch (no change to the tool contract). lookup_record dispatches on the configured source type to a resolver - UploadResolver, ApiResolver, or DbResolver - each returning the same shape { status, record } with the same status enum (ok | not_found | unverified | invalid_type | rate_limited). The tool request/response contract (4.8.1) and the AI's behavior are identical across all three.
+
+Field mapping. API responses and database rows will not use the industry schema's field names. Each connector carries a mapping from its response fields / columns to the schema's returned fields. The resolver normalizes to schema fields before returning; nothing downstream sees tenant-specific field names.
+Identity verification stays in engine code. Every resolver must surface the record's verify field (email / phone / name / DOB) to the engine, and the engine performs the match exactly as in 4.8.2. Verification is never delegated to the tenant's API or database, nor to the model. A source that cannot return the verify field cannot be used for a verified record_type.
+
+Always live, no cache (POC). API and DB records are fetched fresh on every lookup - no caching - so customers always see current data. Live fetch latency counts against the per-turn timeout budget (4.1); each connector has its own short timeout (default 5s) plus one bounded retry. A timeout, auth failure, or connection error is normalized to a connector_error and handled by the existing "slow/failed tool - graceful fallback or escalation" path (4.1, 5.3) - no new escalation logic.
+
+Security (connectors are a trust boundary).
+•  Credentials (API keys, tokens, DB passwords, connection strings) are encrypted at rest, strictly tenant-scoped, and never exposed to the model or returned to the widget.
+•  Database connectors must use a read-only account and parameterized queries only. The lookup key and verify value are untrusted end-customer input and are never string-concatenated into SQL (injection boundary).
+•  API connectors require TLS and an outbound URL allowlist / SSRF guard so a tenant-supplied URL cannot reach internal services.
+•  Records fetched from any source pass the same tenant-isolation and verification gates before any field is disclosed.
+
+Connector testing. On saving an API or DB connector the admin runs a test lookup; auth, connectivity, and field-mapping errors surface at configuration time, mirroring the ingestion-status pattern used for KB sources (4.6). Per-connector config (base URL, auth type, request/query template, field mapping, timeout) lives in the admin console alongside KB and dataset management (5.1).
+
+5. Functional Requirements
+
+5.1 Tenant onboarding & admin console
+
+Onboarding collects three kinds of tenant data in the same flow:
+
+Industry selection - tenant picks one of the five templates (4.8), which sets its record schema(s).
+Knowledge sources (company-specific) - documents, pasted text, URLs → RAG (§4.6).
+User-specific record data - tenant uploads its records (CSV/JSON) matching the chosen industry's schema. This is the data the AI looks up for order/warranty/equivalent questions. For the POC this is mock data the tenant provides.
+
+Tenant self-signup (email + password, with email verification) and tenant workspace creation.
+
+Admin can: select industry, configure the widget's allowed domains, upload/manage KB sources and record datasets, configure agent settings, invite/manage human agents (create their logins), generate the widget embed snippet, view tickets/conversations, and access the agent queue.
+
+Record-data management: view uploaded records, see row/validation status, re-upload, and delete the same surface area as KB source management.
+
+Agent settings include: agent name & persona/tone, welcome message, supported languages + default language, active escalation triggers & relevance threshold (§4.6), sensitive-intent list, failed-attempt count N, follow-up SLA text, resolve/close idle timers (default 10 min each), session id lifetime, the allowed tag list + pending-tag approval tray (4.2.3), optional carrier tracking-URL template (§4.4), autonomy on/off (default on).
+
+5.1.1 Users, roles & authentication
+
+Three distinct kinds of user; only staff have logins:
+Admin (staff, login) - the person who signs up becomes the first admin of that tenant; admins configure the agent, upload/manage KB + record data, invite other staff, and view everything. Multiple admins allowed.
+Agent (staff, login) - support staff who work the escalation queue only (5.4), each with their own email/password and Available/Away toggle. One agent role for POC (no permission tiers).
+End customer (no login) - anonymous; identified only by the browser session_id for conversation continuity, and lightly verified per-lookup (verify field, 4.8.2) only when accessing personal data. No customer accounts; cross-device continuity is therefore not supported (accepted POC limit).
+
+Scoping: every staff account carries tenant_id; a staff member can only ever see their own tenant's data. Industry is an attribute of the tenant (which records schema), NOT a separate login layer. So the hierarchy is Tenant (one industry) → N admin/agent logins → unlimited anonymous customers.
+
+5.2 Web chat widget
+
+A single embeddable <script> snippet renders a chat bubble + panel on the tenant's site, authenticated by widget key; requests are accepted only from the tenant's configured allowed domains.
+Widget shows the configured welcome message, supports streaming replies, text-only chat (no file upload for POC), a visible "talk to a human" affordance, and thumbs up/down on each AI message.
+The widget is responsive (desktop + mobile web) and isolated from the host page's styles.
+Accessibility baseline: full keyboard operability, ARIA roles on the chat log and controls, visible focus, WCAG AA contrast, screen-reader-announced messages.
+A one-line consent/privacy notice is shown before the first message.
+Session continuity within a browser (4.1); optional capture of name/email.
+Network-error handling: transient failures show a retry affordance rather than dropping the message.
+
+5.3 AI conversation engine
+
+Maintains per-conversation context and history.
+Uses tools: KB retrieval, lookup_record (generic record lookup per 4.8), create/update ticket, escalate.
+Decides autonomously which tool(s) to call and when to escalate.
+Grounds answers in retrieved knowledge or tool results; refuses to fabricate.
+Produces a structured outcome per turn (answer, tags, tool calls made, retrieval hits, detected language, escalate y/n, and an advisory confidence value used only for observability NOT as the escalation trigger, which is retrieval-grounding-based per 4.5).
+Tool errors/timeouts are handled with a bounded retry then graceful fallback/escalation. A per-conversation cap on total turns and total tool calls prevents runaway loops (6).
+
+5.4 Agent (human) workspace
+
+Agents have their own login credentials (email + password), invited/created by the tenant admin separate from the admin login. One agent role for the POC (no permission tiers).
+Presence: a manual Available / Away toggle in the workspace determines whether an agent receives new escalations; logging out counts as Away. An agent is eligible for routing only when toggle = Available. If no agent is Available, the after-hours path (4.5.1) fires.
+Queue of escalated conversations with status and wait time.
+Conversation view: full transcript, AI summary, KB sources the AI used, suggested reply.
+Escalated tickets are claimed, not auto-assigned. Claiming locks the ticket to that agent (with_agent + assignee); a second agent opening it sees read-only until released.
+Agents can reply, change status, add internal notes, tag, and resolve/close.
+Real-time updates when new escalations arrive; notification to the tenant's support address when no agent is Available (4.5.1).
+
+5.5 Ticketing system
+
+CRUD + lifecycle as defined in 4.2 (states, transition rules, auto-resolve). List, filter, search, detail view.
+Auto-generated resolution summary on entry to resolve.
+
+5.6 Tenant analytics
+
+Dashboard for the tenant admin: conversation volume, autonomous-resolution rate, escalation count + reason breakdown, top tags/intents, language distribution, median/p95 latency, token cost per conversation, and thumbs up/down CSAT. All tenant-scoped and date-filterable.
+
+6. Key User Flows
+
+6.1 Customer asks a KB question (autonomous resolve)
+
+Customer opens widget → asks in their language → AI detects language, retrieves KB (above relevance threshold), answers with source → customer confirms or goes idle → ticket auto-resolves (4.2.2).
+
+6.2 Order status
+
+Customer asks "where's my order" → AI requests order id (+ email) → verifies identity → calls lookup_record → returns status + ETA (+ tracking link if available) → resolves. Escalates if: not verified after retries, delivered-but-not-received, or a refund dispute on a cancelled order not covered by KB.
+
+6.3 Warranty claim
+
+Customer asks about warranty → AI gets serial or order id → verifies via email → calls lookup_record → states coverage + expiry. If active and customer wants to claim → tag warranty_claim, set pointer → guide from KB claim steps if present, else escalate. void → auto-escalate. Photo/receipt needed → escalate (no widget upload).
+
+
+
+6.4 Escalation to human
+
+AI hits a trigger → tells customer a human is joining (or, if none Available, captures email and promises follow-up per SLA) → ticket → agent queue → agent claims and opens the conversation with full context → agent replies → resolves.
+
+6.5 Tenant onboarding
+Admin signs up (verifies email) → selects industry → uploads docs/URLs and record data → ingestion/validation completes → configures agent + languages + escalation + allowed domains → copies embed snippet → tests in widget preview.
+
+6.6 Record not found / verification fails
+
+AI collects key and verify value → lookup_record returns not_found/unverified → AI gives the neutral "couldn't match those details" message → after N attempts (1 for healthcare) escalates or offers email follow-up.
+
+7. Constraints & Assumptions
+
+Single channel (web widget) for POC; widget is text-only (no file/photo upload).
+Five fixed industry templates for the POC (4.8); a tenant belongs to one industry; other industries are post-POC.
+User-specific record data is tenant-supplied during onboarding (CSV/JSON) and treated as mock data behind a contract that mirrors a real integration response, so live connectors can replace it later without redesign.
+Tenants supply both their knowledge and their record data; answer quality depends on the quality/completeness of what they upload.
+One human-agent role for POC (no granular roles/permissions).
+End customers are not authenticated; identity for record lookups is verified via the per-industry verify field only.
+English + 4 additional languages minimum.
+
+
+
+
+
