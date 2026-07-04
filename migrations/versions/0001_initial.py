@@ -42,9 +42,11 @@ _POLICY = """
 ALTER TABLE {t} ENABLE ROW LEVEL SECURITY;
 ALTER TABLE {t} FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON {t}
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 """
+# nullif(..., '') is load-bearing: an unset GUC returns NULL and an empty-string GUC ('')
+# becomes NULL too, so both fail closed (0 rows) instead of throwing ''::uuid cast errors.
 
 # widget_key is a PUBLIC identifier — permissive SELECT (for the pre-tenant bootstrap lookup),
 # tenant-scoped writes.
@@ -53,8 +55,8 @@ ALTER TABLE widget_key ENABLE ROW LEVEL SECURITY;
 ALTER TABLE widget_key FORCE ROW LEVEL SECURITY;
 CREATE POLICY widget_key_public_read ON widget_key FOR SELECT USING (true);
 CREATE POLICY widget_key_tenant_write ON widget_key FOR ALL
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 """
 
 # Grants are guarded so the migration also runs on a single-role dev DB.
