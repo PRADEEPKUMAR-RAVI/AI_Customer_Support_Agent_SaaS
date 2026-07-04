@@ -19,7 +19,7 @@ from app.infra.db.engine import SessionLocal
 from app.infra.db.models.knowledge import KbChunk, Source
 from app.infra.db.models.tenant import AgentSettings, Staff, Tenant, WidgetKey
 from app.infra.db.session import with_tenant
-from app.infra.embeddings.fake import FakeEmbedder
+from app.infra.embeddings.router import get_embedder
 
 _TENANTS = [
     ("Acme Retail", Industry.RETAIL, "admin@acme.test", "wk_seed_retail"),
@@ -31,7 +31,10 @@ _SEED_DOC = "Our return policy allows returns within 30 days of delivery."
 
 async def _seed() -> None:
     settings = get_settings()
-    embedder = FakeEmbedder(dim=settings.embed_dim)
+    # Use the configured embedder so seeded chunks match the running stack (fake in dev/CI, real
+    # when USE_FAKE_EMBEDDINGS=false) — avoids mixing fake + real vector spaces at retrieval time.
+    embedder = get_embedder()
+    embedder_id = "fake" if settings.use_fake_embeddings else settings.embed_model
 
     async with SessionLocal() as session:
         async with session.begin():
@@ -63,7 +66,7 @@ async def _seed() -> None:
                     content=_SEED_DOC,
                     content_hash="seed-return-policy",
                     embedding=vector,
-                    embedder_id="fake",
+                    embedder_id=embedder_id,
                     dim=settings.embed_dim,
                     language="en",
                 )

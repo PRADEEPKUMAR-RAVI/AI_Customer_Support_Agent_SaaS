@@ -18,7 +18,10 @@ x-api-env: &api-env
   JWT_SECRET: dev-insecure-change-me-32-bytes-minimum-secret
   CREDENTIAL_MASTER_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
   USE_FAKE_LLM: "true"
-  USE_FAKE_EMBEDDINGS: "true"
+  # Real self-hosted embeddings, baked into the image at build time (no runtime download).
+  # Flip to "true" for a fast/light local run when real inference isn't needed.
+  USE_FAKE_EMBEDDINGS: "false"
+  EMBED_CACHE_DIR: /app/models
   FRONTEND_ORIGIN: http://localhost:5173
 
 services:

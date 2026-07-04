@@ -11,7 +11,10 @@ import createClient, { type Middleware } from "openapi-fetch";
 import type { paths } from "../api/generated/schema";
 import { getAccessToken, refreshAccessToken } from "./auth";
 
-const API_BASE = "/api/v1";
+// The generated OpenAPI path keys already include the `/api/v1` prefix, so the client base is
+// the origin root (the Vite dev proxy forwards `/api` to the backend). Setting it to `/api/v1`
+// here would double-prefix every typed call.
+const API_BASE = "";
 
 const authMiddleware: Middleware = {
   async onRequest({ request }) {

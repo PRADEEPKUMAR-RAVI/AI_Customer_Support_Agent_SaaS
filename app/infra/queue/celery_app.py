@@ -20,6 +20,8 @@ celery_app = Celery(
     "cs_agent",
     broker=_settings.redis_url,
     backend=None,  # fire-and-forget; results not needed (avoids Redis memory growth)
+    # Task modules the worker must import to register tasks (extend as workers land).
+    include=["app.workers.ingestion"],
 )
 
 celery_app.conf.update(

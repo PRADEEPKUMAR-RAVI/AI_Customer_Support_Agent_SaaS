@@ -31,6 +31,10 @@ class Source(Base, TenantMixin, TimestampMixin):
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source_url: Mapped[str | None] = mapped_column(String(2000))  # for URL sources
+    # Serving pointer for delete-last reingest ([IMP-RAG-8]): retrieval answers only from chunks
+    # whose ``version`` equals this. A reingest builds the next generation, flips this in one
+    # transaction, then deletes the old generation last — so a failed reingest keeps the old live.
+    serving_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class KbChunk(Base, TenantMixin, TimestampMixin):
@@ -40,10 +44,14 @@ class KbChunk(Base, TenantMixin, TimestampMixin):
     source_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source.id"), nullable=False, index=True
     )
+    # Ingest generation ([IMP-RAG-8]). Retrieval serves only rows where version == source.serving_version.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # idempotent embed
-    embedding: Mapped[list[float]] = mapped_column(Vector(_EMBED_DIM))
+    # Nullable: parent rows carry no embedding (only children are embedded + retrieved). The
+    # dense/sparse arms filter `embedding IS NOT NULL` so parents never enter the candidate pool.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(_EMBED_DIM), nullable=True)
     ts: Mapped[str | None] = mapped_column(TSVECTOR)  # sparse BM25 arm
     language: Mapped[str | None] = mapped_column(String(16))  # [IMP-RAG-2] regconfig hint
     embedder_id: Mapped[str] = mapped_column(String(64), nullable=False)

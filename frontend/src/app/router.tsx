@@ -1,9 +1,13 @@
 /** Role-gated routing. Feature modules (onboarding, knowledge, records, tickets, workspace,
  * analytics) mount under the admin/agent shells as the two juniors build them. */
 
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 
 import { Card } from "../components";
+import { AgentSettingsPage } from "../features/agent-settings/AgentSettingsPage";
+import { AnalyticsPage } from "../features/analytics/AnalyticsPage";
+import { KnowledgePage } from "../features/knowledge/KnowledgePage";
+import { RecordsPage } from "../features/records/RecordsPage";
 import { AppLayout } from "./layout";
 import { useAuth } from "./providers";
 
@@ -42,6 +46,41 @@ const Placeholder = ({ title }: { title: string }) => (
   </Card>
 );
 
+function AdminHome() {
+  return (
+    <Card>
+      <h2>Admin</h2>
+      <ul>
+        <li>
+          <Link to="knowledge">Knowledge base</Link>
+        </li>
+        <li>
+          <Link to="records">Customer records</Link>
+        </li>
+        <li>
+          <Link to="analytics">Analytics</Link>
+        </li>
+        <li>
+          <Link to="settings">Agent settings</Link>
+        </li>
+      </ul>
+    </Card>
+  );
+}
+
+function AdminRoutes() {
+  return (
+    <Routes>
+      <Route index element={<AdminHome />} />
+      <Route path="knowledge" element={<KnowledgePage />} />
+      <Route path="records" element={<RecordsPage />} />
+      <Route path="analytics" element={<AnalyticsPage />} />
+      <Route path="settings" element={<AgentSettingsPage />} />
+      <Route path="*" element={<Placeholder title="Admin — not found" />} />
+    </Routes>
+  );
+}
+
 export function AppRouter() {
   return (
     <AppLayout>
@@ -54,7 +93,7 @@ export function AppRouter() {
           path="/admin/*"
           element={
             <RequireAuth>
-              <Placeholder title="Admin (onboarding / knowledge / records / settings / analytics)" />
+              <AdminRoutes />
             </RequireAuth>
           }
         />
