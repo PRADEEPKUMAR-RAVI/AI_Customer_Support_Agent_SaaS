@@ -54,8 +54,10 @@ services:
       timeout: 3s
       retries: 10
 
+  # Mailpit — the maintained successor to (archived) MailHog, same author, drop-in: SMTP 1025,
+  # web UI 8025. Service name kept as "mailhog" so SMTP_HOST=mailhog stays valid everywhere.
   mailhog:
-    image: axllent/mailhog
+    image: axllent/mailpit:latest
     ports:
       - "1025:1025"   # SMTP (the app sends here in dev)
       - "8025:8025"   # web UI — read captured mail at http://localhost:8025
