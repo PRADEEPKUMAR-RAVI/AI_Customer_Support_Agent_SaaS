@@ -12,12 +12,13 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
 
+from app.core.config import TenantDefaults
 from app.infra.db.models.knowledge import KbChunk, Source
 from app.infra.embeddings.router import get_embedder
 
-# Provisional dev default until the eval-derived threshold is calibrated ([IMP-DEL-5]).
+# Provisional dev default used ONLY when the tenant's eval-derived threshold is not yet
+# calibrated ([IMP-DEL-5]). agent_settings.relevance_threshold overrides it once set.
 PROVISIONAL_THRESHOLD = 0.15
-CANDIDATE_N = 40
 
 NO_GROUNDING = "NO_GROUNDING"
 KB_NOT_READY = "KB_NOT_READY"
@@ -30,7 +31,18 @@ class GroundedResult:
     top_score: float = 0.0
 
 
-async def kb_retrieve(session, query: str, *, top_k: int = 5, threshold: float | None = None):
+async def kb_retrieve(
+    session,
+    query: str,
+    *,
+    candidates: int | None = None,  # N — pre-rerank pool (contract param, was hardcoded)
+    top_k: int | None = None,
+    threshold: float | None = None,  # tenant's relevance_threshold; None → provisional default
+):
+    """Contract (M2-facing): kb_retrieve(query, [tenant via RLS session], N, top_k, threshold)
+    → GroundedResult{parent-expanded chunks, citations} | NO_GROUNDING | KB_NOT_READY."""
+    candidates = candidates or TenantDefaults.HYBRID_CANDIDATES_N  # 40
+    top_k = top_k or TenantDefaults.RERANK_TOP_K  # 5
     threshold = PROVISIONAL_THRESHOLD if threshold is None else threshold
 
     # Readiness gate ([IMP-RAG-5]): distinguish "still learning" from "no relevant chunk".
@@ -46,7 +58,7 @@ async def kb_retrieve(session, query: str, *, top_k: int = 5, threshold: float |
     # Dense candidates via pgvector cosine distance (HNSW index; RLS scopes to this tenant).
     rows = (
         await session.execute(
-            select(KbChunk).order_by(KbChunk.embedding.cosine_distance(qvec)).limit(CANDIDATE_N)
+            select(KbChunk).order_by(KbChunk.embedding.cosine_distance(qvec)).limit(candidates)
         )
     ).scalars().all()
     if not rows:

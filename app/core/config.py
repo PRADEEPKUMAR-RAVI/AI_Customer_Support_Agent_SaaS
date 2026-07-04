@@ -72,6 +72,13 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# pgvector HNSW runtime tuning (audit [IMP-DAT-1]). With RLS, an ANN search followed by the
+# tenant_id filter can silently return < k rows; ef_search >= the candidate pool and pgvector 0.8
+# iterative scans keep fetching until k tenant rows are found. Set once per connection (engine.py).
+HNSW_EF_SEARCH = 100                 # comfortably clears the hybrid candidate N (=40)
+HNSW_ITERATIVE_SCAN = "relaxed_order"  # requires pgvector >= 0.8
+
+
 # Centralised model pricing (USD per 1M tokens) so per-turn cost is auditable per provider
 # ([IMP-DAT-5]). Approximate list prices — update as vendor pricing changes. Fakes cost nothing.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
