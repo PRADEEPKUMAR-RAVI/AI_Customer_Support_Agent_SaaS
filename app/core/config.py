@@ -27,12 +27,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Postgres — three roles (see .env.example). The app NEVER connects as owner/superuser.
-    database_url: str = "postgresql+asyncpg://cs_app:cs_app_pw@localhost:5432/cs_agent"
+    database_url: str = "postgresql+asyncpg://postgres:password%401234@localhost:5432/cs_agent"
     database_owner_url: str = (
         "postgresql+asyncpg://postgres:password%401234@localhost:5432/cs_agent"
     )
     database_bypass_url: str = (
-        "postgresql+asyncpg://cs_bypass:cs_bypass_pw@localhost:5432/cs_agent"
+        "postgresql+asyncpg://postgres:password%401234@localhost:5432/cs_agent"
     )
 
     redis_url: str = "redis://localhost:6379/6379"

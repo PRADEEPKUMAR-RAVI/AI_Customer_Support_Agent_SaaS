@@ -40,7 +40,7 @@ class TenantMixin:
         UUID(as_uuid=True),
         index=True,
         nullable=False,
-        server_default=text("current_setting('app.tenant_id', true)::uuid"),
+        server_default=text("nullif(current_setting('app.tenant_id', true), '')::uuid"),
     )
 
 
