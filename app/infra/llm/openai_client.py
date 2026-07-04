@@ -56,7 +56,7 @@ class OpenAIClient(LLMPort):
         resp = await client.chat.completions.create(**kwargs)
         choice = resp.choices[0].message
         tool_calls = [
-            ToolCall(name=tc.function.name, arguments=json.loads(tc.function.arguments or "{}"))
+            ToolCall(id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments or "{}"))
             for tc in (choice.tool_calls or [])
         ]
         structured = None

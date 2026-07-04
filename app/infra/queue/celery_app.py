@@ -35,5 +35,18 @@ celery_app.conf.update(
         "app.workers.notification.*": {"queue": "interactive"},
         "app.workers.scheduled.*": {"queue": "interactive"},
     },
+    # Import task modules on worker/beat startup (avoids a celery_app <-> tasks import cycle).
+    imports=(
+        "app.workers.notification_tasks",
+        "app.workers.scheduled_tasks",
+        "app.workers.ingestion_tasks",
+        "app.workers.crawl_tasks",
+        "app.workers.embedding_tasks",
+    ),
+    # Single beat process schedules these (query-driven + idempotent, so a missed tick self-heals).
+    beat_schedule={
+        "drain-outbox": {"task": "app.workers.notification.drain_outbox", "schedule": 3.0},
+        "sweep-idle-tickets": {"task": "app.workers.scheduled.sweep_idle_tickets", "schedule": 30.0},
+    },
     timezone="UTC",
 )

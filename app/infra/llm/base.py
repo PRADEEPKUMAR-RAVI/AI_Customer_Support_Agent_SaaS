@@ -15,6 +15,7 @@ from typing import Any, Protocol, runtime_checkable
 class ToolCall:
     name: str
     arguments: dict[str, Any]
+    id: str = ""  # provider tool-call id — threaded back as tool_call_id (OpenAI protocol)
 
 
 @dataclass

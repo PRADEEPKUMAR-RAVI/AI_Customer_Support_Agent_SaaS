@@ -2,7 +2,7 @@
 # .venv. Picks the venv python for Windows (.venv/Scripts) or Unix (.venv/bin) automatically.
 VENV_PY := $(if $(wildcard .venv/Scripts/python.exe),.venv/Scripts/python.exe,.venv/bin/python)
 
-.PHONY: help up down logs migrate seed export test test-rls lint fe-install fe-gen fe-test fe-dev
+.PHONY: help up down reset logs migrate seed export test test-rls lint fe-install fe-gen fe-test fe-dev
 
 help:
 	@echo "up/down/logs           - full docker stack"
@@ -16,6 +16,12 @@ up:
 
 down:
 	docker compose down
+
+# Clean slate: remove the Postgres volume so the next `up` re-migrates + re-inits the cs_* roles
+# from scratch. DESTRUCTIVE (wipes all tenants/data) — dev only. Then: `make up` and re-seed.
+reset:
+	docker compose down -v
+	@echo "Volumes removed. Run 'make up', then seed: docker compose exec api python -m app.cli.seed"
 
 logs:
 	docker compose logs -f

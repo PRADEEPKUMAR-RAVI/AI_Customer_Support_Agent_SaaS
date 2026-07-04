@@ -29,7 +29,8 @@ Then open:
 - Captured email (MailHog): http://localhost:8025
 - Frontend (FE-Shell), once running (`make fe-install && make fe-dev`): http://localhost:5173
 
-Seeded admin logins use password `password123` (e.g. `admin@acme.test`, `admin@wellness.test`).
+Seeded admin logins use password `password123` (e.g. `admin@acme-retail.com`, `admin@wellness-clinic.com`).
+`make seed` is idempotent — re-running it skips tenants already present. For a clean slate, `make reset`.
 
 ## Running without Docker (host / .venv)
 

@@ -17,8 +17,13 @@ x-api-env: &api-env
   SMTP_FROM: no-reply@cs-agent.local
   JWT_SECRET: dev-insecure-change-me-32-bytes-minimum-secret
   CREDENTIAL_MASTER_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
-  USE_FAKE_LLM: "true"
-  USE_FAKE_EMBEDDINGS: "true"
+  # LLM/embeddings default to fakes; flip in your local .env to use real providers. Compose
+  # substitutes ${...} from the project .env, so USE_FAKE_LLM=false + OPENAI_API_KEY there reach
+  # the containers on the next `docker compose up`.
+  USE_FAKE_LLM: "${USE_FAKE_LLM:-true}"
+  USE_FAKE_EMBEDDINGS: "${USE_FAKE_EMBEDDINGS:-true}"
+  LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
   FRONTEND_ORIGIN: http://localhost:5173
 
 services:
@@ -98,6 +103,20 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "worker", "-Q", "batch", "-l", "info"]
+    environment: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Exactly ONE beat process schedules the M9 sweeps (outbox drain + idle-resolve/close). Its
+  # tasks are query-driven + idempotent, so a mis-scaled second beat could not double-fire.
+  beat:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "beat", "-l", "info"]
     environment: *api-env
     depends_on:
       postgres:

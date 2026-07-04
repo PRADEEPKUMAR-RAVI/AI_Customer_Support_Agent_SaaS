@@ -10,6 +10,7 @@ RESULT (non-negotiable). So the flow branches on retrieval, not on this fake's c
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.infra.llm.base import LLMPort, LLMResult, ToolCall
@@ -51,7 +52,11 @@ class FakeLLM(LLMPort):
         has_tool_result = any(m.get("role") == "tool" for m in messages)
         if tools and not has_tool_result:
             return LLMResult(
-                tool_calls=[ToolCall(name="kb_retrieve", arguments={"query": self._last_user(messages)})],
+                tool_calls=[ToolCall(
+                    id="call_" + uuid.uuid4().hex[:8],
+                    name="kb_retrieve",
+                    arguments={"query": self._last_user(messages)},
+                )],
                 model=model or "fake",
                 prompt_tokens=len(str(messages)) // 4,
             )

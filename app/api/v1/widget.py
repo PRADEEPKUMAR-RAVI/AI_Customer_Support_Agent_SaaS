@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from app.api.errors import AppError
 from app.core import ratelimit
-from app.core.security import mint_session_id
+from app.core.security import create_token, mint_session_id
 from app.infra.db.engine import SessionLocal
 from app.infra.db.models.conversation import Conversation
 from app.infra.db.models.tenant import AgentSettings, AllowedDomain, Tenant, WidgetKey
@@ -34,6 +34,10 @@ class SessionRequest(BaseModel):
 
 class SessionResponse(BaseModel):
     session_id: str
+    conversation_id: str
+    # Signed bearer the widget sends on subsequent /conversations calls; binds tenant+session+
+    # conversation so an anonymous caller can only touch its own conversation ([IMP-SEC-3]).
+    session_token: str
     config: dict
 
 
@@ -93,16 +97,31 @@ async def create_session(body: SessionRequest, request: Request) -> SessionRespo
 
             session_id = mint_session_id()
             ttl = int(cfg.get("session_id_ttl_seconds", 30 * 24 * 3600))
-            session.add(
-                Conversation(
-                    session_id=session_id,
-                    expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl),
-                )
+            conversation = Conversation(
+                session_id=session_id,
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl),
             )
+            session.add(conversation)
+            await session.flush()  # obtain conversation.id
+            session_token = create_token(
+                {
+                    "typ": "widget",
+                    "tenant_id": str(wk.tenant_id),
+                    "session_id": session_id,
+                    "conversation_id": str(conversation.id),
+                },
+                ttl,
+            )
+            conversation_id = str(conversation.id)
 
     public_config = {
         "welcome_message": cfg.get("welcome_message", "Hi! How can I help you today?"),
         "supported_languages": cfg.get("supported_languages", ["en"]),
         "default_language": cfg.get("default_language", "en"),
     }
-    return SessionResponse(session_id=session_id, config=public_config)
+    return SessionResponse(
+        session_id=session_id,
+        conversation_id=conversation_id,
+        session_token=session_token,
+        config=public_config,
+    )

@@ -62,9 +62,21 @@ class Settings(BaseSettings):
 
     frontend_origin: str = "http://localhost:5173"
 
+    # Platform operator (M10) — a SEPARATE principal from tenant staff (scope=platform), never a
+    # tenant JWT. Dev defaults; set real creds in prod.
+    platform_admin_email: str = "ops@platform.local"
+    platform_admin_password: str = "ops-dev-password"
+
     @property
     def is_prod(self) -> bool:
         return self.app_env == "prod"
+
+
+# Outbox relay tuning (M9, [IMP-WRK-1]).
+OUTBOX_DRAIN_BATCH = 20
+OUTBOX_MAX_ATTEMPTS = 6
+OUTBOX_BACKOFF_BASE_SECONDS = 30       # next_attempt_at = now + base * 2**(attempts-1)
+OUTBOX_REAPER_STUCK_SECONDS = 300      # reset rows stuck in 'sending' this long
 
 
 @lru_cache
@@ -89,8 +101,17 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 
 
 def estimate_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
-    """Per-turn cost for one model call, or None if the model's price is unknown."""
+    """Per-turn cost for one model call, or None if the model's price is unknown.
+
+    OpenAI echoes a *dated snapshot* id in the response (e.g. ``gpt-4o-mini-2024-07-18``), which
+    is not a literal MODEL_PRICING key. Fall back to the longest pricing key that prefixes the
+    returned id, so snapshots price at the base model's rate while ``""`` (no-LLM turns) and
+    genuinely unknown models still return None.
+    """
     price = MODEL_PRICING.get(model)
+    if price is None and model:
+        match = max((k for k in MODEL_PRICING if model.startswith(k)), key=len, default=None)
+        price = MODEL_PRICING[match] if match else None
     if price is None:
         return None
     inp, out = price

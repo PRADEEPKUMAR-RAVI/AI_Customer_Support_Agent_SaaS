@@ -62,6 +62,28 @@ export async function streamTurn(opts: StreamOptions): Promise<void> {
   }
 }
 
+/**
+ * Reconnecting wrapper: on a dropped/failed stream, re-POST the SAME body (which MUST carry a
+ * stable `client_msg_id`) so the backend replays the whole turn idempotently ([IMP-FE-1]/[T7])
+ * rather than re-running the loop. Aborts (user cancel) are not retried.
+ */
+export async function streamWithRetry(
+  opts: StreamOptions,
+  { retries = 2, backoffMs = 400 }: { retries?: number; backoffMs?: number } = {}
+): Promise<void> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      await streamTurn(opts);
+      return;
+    } catch (err) {
+      if (opts.signal?.aborted || attempt >= retries) throw err;
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, backoffMs * attempt));
+    }
+  }
+}
+
 /** A stable client_msg_id to reuse across retries of the SAME message. */
 export function newClientMsgId(): string {
   return (crypto as Crypto).randomUUID();
