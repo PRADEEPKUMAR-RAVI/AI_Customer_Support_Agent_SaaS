@@ -1,0 +1,8 @@
+# Normalise line endings to LF in the repo (consistent across Windows/macOS/Linux).
+* text=auto eol=lf
+
+# Binary / generated
+*.png binary
+*.jpg binary
+*.ico binary
+package-lock.json -diff

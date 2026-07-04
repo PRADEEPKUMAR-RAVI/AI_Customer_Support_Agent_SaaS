@@ -1,0 +1,34 @@
+[
+  { "type": "status", "stage": "retrieving" },
+  { "type": "status", "stage": "generating" },
+  { "type": "token", "text": "Your return " },
+  { "type": "token", "text": "policy is 30 days." },
+  {
+    "type": "citation",
+    "citation": {
+      "index": 0,
+      "source_id": "src_1",
+      "title": "Return Policy",
+      "page_number": 3
+    }
+  },
+  {
+    "type": "citation",
+    "citation": {
+      "index": 1,
+      "source_id": "src_2",
+      "title": "Shipping FAQ",
+      "source_url": "https://example.com/faq/shipping"
+    }
+  },
+  {
+    "type": "final",
+    "answer_complete": true,
+    "detected_language": "en",
+    "tags": [{ "name": "order_status", "status": "approved" }],
+    "retrieval_hits": 2,
+    "escalate": false,
+    "advisory_confidence": 0.92
+  },
+  { "type": "done", "turn_id": "turn_abc123", "ticket_state": "ai_handling" }
+]

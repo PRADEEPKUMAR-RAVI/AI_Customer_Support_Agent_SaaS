@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Pure/unit gates — no external services.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: unit + contract gates (transitions, verify, sse-contract, ssrf, crypto)
+        run: pytest -q
+
+  # The CI-gated two-tenant RLS leak test [IMP-DEL-2] against a real pgvector Postgres.
+  rls:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cs_owner
+          POSTGRES_PASSWORD: cs_owner_pw
+          POSTGRES_DB: cs_agent
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U cs_owner -d cs_agent"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://cs_app:cs_app_pw@localhost:5432/cs_agent
+      DATABASE_OWNER_URL: postgresql+asyncpg://cs_owner:cs_owner_pw@localhost:5432/cs_agent
+      DATABASE_BYPASS_URL: postgresql+asyncpg://cs_bypass:cs_bypass_pw@localhost:5432/cs_agent
+      RUN_RLS_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: bootstrap roles + pgvector extension
+        run: PGPASSWORD=cs_owner_pw psql -h localhost -U cs_owner -d cs_agent -f migrations/sql/init_roles.sql
+      - name: apply migration (as owner)
+        run: python -m alembic upgrade head
+      - name: two-tenant RLS leak test
+        run: pytest -q -m rls
+
+  # SSE-fixture drift gate + typed-client generation.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run gen:api --if-present
+      - run: npm run test

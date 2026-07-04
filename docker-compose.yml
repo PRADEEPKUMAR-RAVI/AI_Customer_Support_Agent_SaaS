@@ -1,0 +1,115 @@
+# Phase-0 stack. `docker compose up --build` brings the whole thing up on fakes + local
+# services — no vendor keys needed. The API/workers connect as the NON-owner role `cs_app`
+# so Row-Level Security is always enforced; migrations run as the owner `cs_owner`; the
+# audited RLS-bypass role `cs_bypass` is used only by M10 ops.
+name: cs-agent
+
+# Shared service-name env for the API + workers (overrides the localhost values in .env).
+x-api-env: &api-env
+  APP_ENV: dev
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://cs_app:cs_app_pw@postgres:5432/cs_agent
+  DATABASE_OWNER_URL: postgresql+asyncpg://cs_owner:cs_owner_pw@postgres:5432/cs_agent
+  DATABASE_BYPASS_URL: postgresql+asyncpg://cs_bypass:cs_bypass_pw@postgres:5432/cs_agent
+  REDIS_URL: redis://redis:6379/0
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+  SMTP_FROM: no-reply@cs-agent.local
+  JWT_SECRET: dev-insecure-change-me-32-bytes-minimum-secret
+  CREDENTIAL_MASTER_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  USE_FAKE_LLM: "true"
+  USE_FAKE_EMBEDDINGS: "true"
+  FRONTEND_ORIGIN: http://localhost:5173
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: cs_owner
+      POSTGRES_PASSWORD: cs_owner_pw
+      POSTGRES_DB: cs_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # First-init bootstrap: creates cs_app (NOSUPERUSER/NOBYPASSRLS) + cs_bypass (BYPASSRLS)
+      # and the pgvector extension. Runs once on an empty data volume.
+      - ./migrations/sql/init_roles.sql:/docker-entrypoint-initdb.d/init_roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cs_owner -d cs_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]  # AOF durability [IMP-WRK-2]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailhog:
+    image: axllent/mailhog
+    ports:
+      - "1025:1025"   # SMTP (the app sends here in dev)
+      - "8025:8025"   # web UI — read captured mail at http://localhost:8025
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    # Apply migrations (as owner) then serve.
+    command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    environment: *api-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+
+  # Time-critical queue: outbox/email sends + idle/SLA/reopen sweeps [IMP-DAT-3].
+  worker-interactive:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "worker", "-Q", "interactive", "-l", "info"]
+    environment: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Bulk queue: ingestion / crawl / embedding — isolated so a big upload can't starve emails.
+  worker-batch:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "worker", "-Q", "batch", "-l", "info"]
+    environment: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Self-hosted embeddings + rerank (BGE-M3 + bge-reranker-v2-m3 via ONNX) — the default real
+  # adapter when USE_FAKE_EMBEDDINGS=false. For the POC we run on fakes, so this is left as a
+  # documented option rather than a running service. To enable, serve the models (e.g. HF
+  # Text-Embeddings-Inference or an `.[onnx]` fastembed worker) and point EMBEDDINGS_PROVIDER
+  # at it. Example:
+  # bge:
+  #   image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+  #   command: ["--model-id", "BAAI/bge-m3"]
+  #   ports: ["8080:80"]
+
+volumes:
+  pgdata:

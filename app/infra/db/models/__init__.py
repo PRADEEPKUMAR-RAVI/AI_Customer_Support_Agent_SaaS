@@ -1,0 +1,13 @@
+"""Import every model so ``Base.metadata`` is fully populated (Alembic + create_all)."""
+
+from app.infra.db.models.conversation import Conversation, Message  # noqa: F401
+from app.infra.db.models.knowledge import FileBlob, KbChunk, Source  # noqa: F401
+from app.infra.db.models.outbox import EmailLog, Outbox, PlatformAuditLog  # noqa: F401
+from app.infra.db.models.tenant import (  # noqa: F401
+    AgentSettings,
+    AllowedDomain,
+    Staff,
+    Tenant,
+    WidgetKey,
+)
+from app.infra.db.models.ticket import Ticket, TicketEvent  # noqa: F401

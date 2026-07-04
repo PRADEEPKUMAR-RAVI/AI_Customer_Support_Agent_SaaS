@@ -1,0 +1,57 @@
+[project]
+name = "cs-agent"
+version = "0.1.0"
+description = "AI Customer Support Agent — multi-tenant SaaS (POC). Phase-0 foundation."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29",
+    "pgvector>=0.3",
+    "alembic>=1.13",
+    "redis>=5.0",
+    "celery>=5.4",
+    "httpx>=0.27",
+    "PyJWT>=2.8",
+    "argon2-cffi>=23.1",
+    "cryptography>=42.0",
+    "python-multipart>=0.0.9",
+    "email-validator>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+# Real embedding/rerank adapter (self-hosted BGE via ONNX). Optional so dev/CI runs on fakes.
+onnx = [
+    "fastembed>=0.3",
+]
+
+[project.scripts]
+cs-seed = "app.cli.seed:main"
+cs-export = "app.cli.export_openapi:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# `rls` marks tests that need a real Postgres (run in CI/compose, skipped without a DSN).
+markers = [
+    "rls: requires a live Postgres with pgvector (integration)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
