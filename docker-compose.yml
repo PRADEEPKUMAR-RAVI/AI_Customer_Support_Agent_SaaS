@@ -29,7 +29,9 @@ services:
       POSTGRES_PASSWORD: cs_owner_pw
       POSTGRES_DB: cs_agent
     ports:
-      - "5432:5432"
+      # Host 5433 so this coexists with a local PostgreSQL on 5432. Containers still talk to
+      # each other internally on 5432 (see x-api-env). Host tools use localhost:5433.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # First-init bootstrap: creates cs_app (NOSUPERUSER/NOBYPASSRLS) + cs_bypass (BYPASSRLS)
