@@ -20,6 +20,18 @@ from app.infra.db.session import set_tenant_guc, with_tenant
 pytestmark = pytest.mark.rls
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_engine_between_tests():
+    """pytest-asyncio gives each test a fresh event loop, but the module-global async engine
+    pools connections bound to a loop. Dispose around each test so every connection is created
+    and torn down on the current test's loop (avoids 'Event loop is closed' on teardown)."""
+    from app.infra.db.engine import engine
+
+    await engine.dispose()
+    yield
+    await engine.dispose()
+
+
 async def _make_tenant(name: str) -> uuid.UUID:
     async with SessionLocal() as session:
         async with session.begin():

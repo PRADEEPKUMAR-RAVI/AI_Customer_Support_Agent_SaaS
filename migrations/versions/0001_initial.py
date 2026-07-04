@@ -38,26 +38,30 @@ TENANT_SCOPED = [
     "file_blob",
 ]
 
-_POLICY = """
-ALTER TABLE {t} ENABLE ROW LEVEL SECURITY;
-ALTER TABLE {t} FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON {t}
-    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
-"""
-# nullif(..., '') is load-bearing: an unset GUC returns NULL and an empty-string GUC ('')
-# becomes NULL too, so both fail closed (0 rows) instead of throwing ''::uuid cast errors.
+# One statement per list entry — asyncpg forbids multiple commands in a single execute()
+# (prepared-statement protocol). nullif(..., '') is load-bearing: an unset GUC returns NULL and
+# an empty-string GUC ('') becomes NULL too, so both fail closed (0 rows) instead of throwing a
+# ''::uuid cast error.
+def _policy_stmts(t: str) -> list[str]:
+    return [
+        f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY",
+        f"CREATE POLICY tenant_isolation ON {t} "
+        "USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) "
+        "WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)",
+    ]
+
 
 # widget_key is a PUBLIC identifier — permissive SELECT (for the pre-tenant bootstrap lookup),
 # tenant-scoped writes.
-_WIDGET_KEY_POLICY = """
-ALTER TABLE widget_key ENABLE ROW LEVEL SECURITY;
-ALTER TABLE widget_key FORCE ROW LEVEL SECURITY;
-CREATE POLICY widget_key_public_read ON widget_key FOR SELECT USING (true);
-CREATE POLICY widget_key_tenant_write ON widget_key FOR ALL
-    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
-"""
+_WIDGET_KEY_STMTS = [
+    "ALTER TABLE widget_key ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE widget_key FORCE ROW LEVEL SECURITY",
+    "CREATE POLICY widget_key_public_read ON widget_key FOR SELECT USING (true)",
+    "CREATE POLICY widget_key_tenant_write ON widget_key FOR ALL "
+    "USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) "
+    "WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)",
+]
 
 # Grants are guarded so the migration also runs on a single-role dev DB.
 _GRANTS = """
@@ -88,10 +92,12 @@ def upgrade() -> None:
     # Create every table from the models (single source of truth for columns).
     Base.metadata.create_all(bind=bind)
 
-    # RLS policies.
+    # RLS policies (one statement per execute — asyncpg forbids multi-command statements).
     for table in TENANT_SCOPED:
-        op.execute(_POLICY.format(t=table))
-    op.execute(_WIDGET_KEY_POLICY)
+        for stmt in _policy_stmts(table):
+            op.execute(stmt)
+    for stmt in _WIDGET_KEY_STMTS:
+        op.execute(stmt)
 
     # Global-unique staff email (POC: one tenant per person; enables pre-tenant login lookup).
     op.execute("CREATE UNIQUE INDEX uq_staff_email_global ON staff (email)")
