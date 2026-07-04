@@ -18,7 +18,7 @@ from app.core.permissions import permissions_for
 from app.core.security import decode_token
 from app.infra.db.engine import SessionLocal
 from app.infra.db.session import set_tenant_guc
-from app.schemas.auth import StaffContext
+from app.schemas.auth import PlatformContext, StaffContext
 
 
 async def get_current_staff(authorization: str | None = Header(default=None)) -> StaffContext:
@@ -64,5 +64,45 @@ def require_permission(permission: str):
                 detail=f"missing permission: {permission}",
             )
         return staff
+
+    return _dep
+
+
+async def get_current_platform_principal(
+    authorization: str | None = Header(default=None),
+) -> PlatformContext:
+    """M10's operator identity — a separate principal, never a tenant-scoped staff JWT
+    [IMP-SEC-9]. A normal staff access token has no ``scope`` claim at all, so this rejects it
+    cleanly rather than silently trusting it."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise AppError(status_code=401, title="Not authenticated", code="unauthenticated")
+    token = authorization.split(" ", 1)[1]
+    try:
+        claims = decode_token(token)
+    except Exception as exc:  # jwt.PyJWTError etc.
+        raise AppError(
+            status_code=401, title="Invalid or expired token", code="invalid_token"
+        ) from exc
+    if claims.get("scope") != "platform":
+        raise AppError(
+            status_code=403, title="Platform scope required", code="platform_scope_required"
+        )
+    return PlatformContext(actor_id=claims["sub"])
+
+
+def require_platform_permission(permission: str):
+    """Mirrors ``require_permission`` for the platform-scoped M10 principal."""
+
+    async def _dep(
+        principal: PlatformContext = Depends(get_current_platform_principal),
+    ) -> PlatformContext:
+        if permission not in permissions_for("platform"):
+            raise AppError(
+                status_code=403,
+                title="Forbidden",
+                code="forbidden",
+                detail=f"missing permission: {permission}",
+            )
+        return principal
 
     return _dep

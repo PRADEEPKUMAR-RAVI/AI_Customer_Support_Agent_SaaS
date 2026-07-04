@@ -102,6 +102,8 @@ async def apply_transition(
         values["resolved_at"] = now
     elif to_state is S.CLOSED:
         values["closed_at"] = now
+    elif to_state is S.ESCALATED:
+        values["escalated_at"] = now  # queue FIFO ordering anchor (M7)
 
     result = await session.execute(
         update(Ticket)

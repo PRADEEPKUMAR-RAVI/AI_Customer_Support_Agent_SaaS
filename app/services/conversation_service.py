@@ -23,15 +23,13 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.core.config import estimate_cost_usd
-from app.core.events import emit
-from app.domain.escalation.reasons import EscalationReason
-from app.domain.ticketing.states import Actor, TicketState
+from app.domain.ticketing.states import TicketState
 from app.infra.cache.redis import get_redis
 from app.infra.db.models.conversation import Conversation, Message
 from app.infra.db.models.tenant import AgentSettings, Tenant
 from app.infra.db.session import with_tenant
 from app.schemas.metrics import ModelCost, TurnMetricDTO
-from app.services import ticket_service
+from app.services import escalation_service, ticket_service
 from app.services.ai_engine import engine
 from app.services.analytics_service import record_turn_metric
 from app.services.ai_engine.guardrails import ALREADY_WITH_HUMAN
@@ -140,9 +138,10 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     now = datetime.now(timezone.utc)
     session.add(Message(conversation_id=conv.id, role="customer", content=user_text,
                         client_msg_id=client_msg_id))
-    ticket = await ticket_service.get_or_create_ticket(session, conversation_id=conv.id,
-                                                       language=conv.language)
+    ticket = await ticket_service.get_or_create_ticket(session, conversation_id=conv.id)
     ticket.last_customer_msg_at = now
+    if not ticket.language:
+        ticket.language = conv.language
 
     # [A15] After-hours email capture — a non-LLM write that lands even while the ticket is
     # escalated, so a customer can leave a follow-up address without re-invoking the model (the
@@ -176,23 +175,25 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     if not ticket.language:
         ticket.language = result.detected_language
 
-    # Transitions (guarded CAS, whitelist): AI first response → ai_handling; escalate dominates.
-    if ticket.state == TicketState.NEW.value:
-        await ticket_service.transition(session, ticket=ticket, to_state=TicketState.AI_HANDLING, actor=Actor.AI)
-    if result.escalate and ticket.state == TicketState.AI_HANDLING.value:
-        await ticket_service.transition(session, ticket=ticket, to_state=TicketState.ESCALATED, actor=Actor.AI)
-        # priority per trigger ([C4]); support-notify email via the outbox → M9 sends it.
-        # (person-3's M6 will own the full escalation routing, incl. presence + after-hours SLA.)
-        ticket.priority = "high" if result.escalation_reason in (
-            EscalationReason.SENSITIVE, EscalationReason.DISPUTE) else "normal"
-        support_to = cfg.get("support_notification_email") or "support@tenant.local"
-        await emit(
-            session,
-            event_type="escalation.support_notify",
-            payload={"to": support_to, "ticket_id": str(ticket.id),
-                     "reason": result.escalation_reason.value if result.escalation_reason else "escalated"},
-            dedupe_key=f"escalation:{ticket.id}",
+    # Transitions via P3's M5/M6 service API (all guarded CAS; escalate dominates [IMP-TKT-3]).
+    # new -> ai_handling on the first AI response (idempotent no-op on later turns).
+    await ticket_service.start_ai_handling(session, ticket_id=ticket.id)
+    answer_text = result.answer
+    if result.escalate and result.escalation_reason is not None:
+        # Delegate the whole hand-off to M6: it does the ai_handling -> escalated CAS, sets
+        # priority [C4], writes the escalation-summary stub, and (after-hours) emits the single
+        # support-notify email — replacing P1's earlier inline block. M2 only supplies the reason.
+        handoff = await escalation_service.escalate(
+            session, ticket_id=ticket.id, tenant_id=ctx.tenant_id, reason=result.escalation_reason
         )
+        # After-hours (no agent available): surface M6's "leave your email — {SLA}" prompt to the
+        # customer instead of the engine's generic hand-off line ([A15]/§4.5.1). The queued case
+        # keeps the engine's reason-specific message (e.g. dispute hand-off).
+        if handoff.applied and handoff.mode == "after_hours" and handoff.customer_message:
+            answer_text = handoff.customer_message
+    # The service calls UPDATE by id; refresh the loaded object so the SSE `done` event and the
+    # returned events below report the ticket's true post-transition state.
+    await session.refresh(ticket)
 
     tags = clamp_tags(result.tags_raw, cfg.get("allowed_tags", []))
     structured_out = {
@@ -206,7 +207,7 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
         "citations": result.citations,
         "offered_human": result.offered_human,  # [A2] cross-turn: next turn treats "yes" as acceptance
     }
-    ai_msg = Message(conversation_id=conv.id, role="ai", content=result.answer,
+    ai_msg = Message(conversation_id=conv.id, role="ai", content=answer_text,
                      structured_out=structured_out, client_msg_id=client_msg_id)
     session.add(ai_msg)
     await session.flush()
@@ -229,7 +230,7 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
         )],
     ))
 
-    return _build_events(result.status_stages, result.answer, result.citations, structured_out,
+    return _build_events(result.status_stages, answer_text, result.citations, structured_out,
                          str(ai_msg.id), ticket.state)
 
 

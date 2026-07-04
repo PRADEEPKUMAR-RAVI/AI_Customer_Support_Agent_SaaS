@@ -1,0 +1,93 @@
+"""M6 — Escalation: the "no dead ends" safety net. LLM-free — M2 produces the escalation
+summary text and passes it in when it calls this; M6 only decides mode (queued vs after-hours)
+and orchestrates the mechanical hand-off. Trigger *evaluation* lives in
+``domain.escalation.triggers`` — this module only acts on an already-decided reason.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import TenantDefaults
+from app.core.events import emit
+from app.domain.escalation.reasons import EscalationReason
+from app.domain.ticketing.states import Actor
+from app.infra.db.models.tenant import AgentSettings
+from app.infra.db.models.ticket import Ticket
+from app.services import presence_service
+from app.services.ticket_service import escalate_ticket
+
+# [C4] deterministic/safety-critical reasons get high priority; everything else stays normal.
+_HIGH_PRIORITY_REASONS = {EscalationReason.SENSITIVE, EscalationReason.DISPUTE}
+
+
+@dataclass(frozen=True)
+class HandOffResult:
+    applied: bool  # False = the ticket wasn't escalable from its current state (no-op, no side effects)
+    mode: str = ""  # queued|after_hours
+    customer_message: str = ""
+
+
+async def escalate(
+    session: AsyncSession,
+    *,
+    ticket_id: uuid.UUID,
+    tenant_id,
+    reason: EscalationReason,
+) -> HandOffResult:
+    """[IMP-ESC-3] Always transitions + enqueues idempotently, regardless of presence — presence
+    only decides the customer-facing message and whether the after-hours path also fires.
+    ``state=escalated`` with no assignee IS the queue (``GET /agents/queue`` derives from it
+    directly); there is no separate queue table to insert into.
+
+    Only the AI actor may drive ``ai_handling -> escalated`` (enforced by the whitelist, not by
+    this function) — this is the seam M2 calls once it exists.
+    """
+    priority = "high" if reason in _HIGH_PRIORITY_REASONS else "normal"
+    result = await escalate_ticket(session, ticket_id=ticket_id, actor=Actor.AI, priority=priority)
+    if not result.applied:
+        return HandOffResult(applied=False)
+
+    available = await presence_service.is_tenant_available(session, tenant_id)
+    settings_row = (await session.execute(select(AgentSettings))).scalar_one_or_none()
+    config = settings_row.config if settings_row else {}
+
+    if available:
+        return HandOffResult(
+            applied=True,
+            mode="queued",
+            customer_message="You're being connected to a human agent.",
+        )
+
+    # After-hours: SLA promise to the customer + a single support-notify email [T6] (no
+    # recurring unclaimed-nudge scheduler for the POC).
+    sla_text = config.get("sla_followup_text", TenantDefaults.SLA_FOLLOWUP_TEXT)
+    support_email = config.get("support_notification_email")
+    if support_email:
+        await emit(
+            session,
+            event_type="email.escalation_support_notify",
+            payload={"to": support_email, "ticket_id": str(ticket_id), "reason": reason.value},
+            dedupe_key=f"escalation_notify:{ticket_id}",
+        )
+    return HandOffResult(
+        applied=True,
+        mode="after_hours",
+        customer_message=(
+            f"No agents are available right now. Please share your email — {sla_text}"
+        ),
+    )
+
+
+async def capture_contact_email(
+    session: AsyncSession, *, ticket_id: uuid.UUID, email: str
+) -> None:
+    """[A15] The narrow, non-LLM after-hours email-capture path. Writes ``ticket.contact_email``
+    even while the ticket is ``escalated`` — the ONE deliberate exception to "the AI stops
+    answering once escalated" [IMP-TKT-1], and it must stay a plain field write, never an LLM
+    turn. Kept distinct from any verified ``linked_record`` identity."""
+    await session.execute(update(Ticket).where(Ticket.id == ticket_id).values(contact_email=email))

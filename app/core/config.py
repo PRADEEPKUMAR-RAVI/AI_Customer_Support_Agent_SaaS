@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://postgres:password%401234@localhost:5432/cs_agent"
     )
 
-    redis_url: str = "redis://localhost:6379/6379"
+    redis_url: str = "redis://localhost:6379/0"
 
     smtp_host: str = "localhost"
     smtp_port: int = 1025

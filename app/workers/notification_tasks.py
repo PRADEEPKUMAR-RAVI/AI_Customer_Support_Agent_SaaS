@@ -36,16 +36,22 @@ log = logging.getLogger(__name__)
 
 
 def _render(event_type: str, payload: dict) -> tuple[str, str, str] | None:
-    """(recipient, subject, body) for an outbox event, or None to no-op. Bodies are minimal for
-    the POC (no HTML templating)."""
+    """(recipient, subject, body) for an outbox EMAIL event, or None to no-op (non-email events
+    like ``ticket.*_summary.requested`` fall through and are marked done without sending). Bodies
+    are minimal for the POC (no HTML templating). Event names match the emit() call sites across
+    M1 (auth), M6 (escalation_service), and admin staff-invite."""
     if event_type == "email.verify":
         return payload["to"], "Verify your account", f"Confirm your email. Token: {payload.get('token')}"
-    if event_type == "escalation.support_notify":
+    if event_type == "email.password_reset":
+        return (payload["to"], "Reset your password",
+                f"Use this token to reset your password: {payload.get('token')}")
+    if event_type == "email.staff_invite":
+        return (payload["to"], "You've been invited",
+                f"You've been invited to a workspace. Accept with this token: {payload.get('token')}")
+    if event_type in ("email.escalation_support_notify", "escalation.support_notify"):
         return (payload["to"], "A customer is waiting for a human agent",
                 f"Ticket {payload.get('ticket_id')} was escalated (reason: {payload.get('reason')}). "
                 f"Please claim it in the agent workspace.")
-    if event_type == "escalation.sla_followup":
-        return payload["to"], "We'll follow up shortly", payload.get("sla_text", "A human will follow up soon.")
     return None
 
 

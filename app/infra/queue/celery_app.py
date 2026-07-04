@@ -36,9 +36,11 @@ celery_app.conf.update(
         "app.workers.scheduled.*": {"queue": "interactive"},
     },
     # Import task modules on worker/beat startup (avoids a celery_app <-> tasks import cycle).
+    # person-3's `scheduled` module self-appends its own `sweep-ticket-timers` beat entry on
+    # import, so it isn't listed in beat_schedule here.
     imports=(
         "app.workers.notification_tasks",
-        "app.workers.scheduled_tasks",
+        "app.workers.scheduled",
         "app.workers.ingestion_tasks",
         "app.workers.crawl_tasks",
         "app.workers.embedding_tasks",
@@ -46,7 +48,6 @@ celery_app.conf.update(
     # Single beat process schedules these (query-driven + idempotent, so a missed tick self-heals).
     beat_schedule={
         "drain-outbox": {"task": "app.workers.notification.drain_outbox", "schedule": 3.0},
-        "sweep-idle-tickets": {"task": "app.workers.scheduled.sweep_idle_tickets", "schedule": 30.0},
     },
     timezone="UTC",
 )

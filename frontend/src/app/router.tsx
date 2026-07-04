@@ -1,11 +1,18 @@
-/** Role-gated routing. Feature modules (onboarding, knowledge, records, tickets, workspace,
- * analytics) mount under the admin/agent shells as the two juniors build them. The public hosted
- * chat page (`/chat/:widgetKey`) renders full-screen OUTSIDE the authenticated console shell. */
+/** Role-gated routing. The public hosted chat page (`/chat/:widgetKey`) renders full-screen
+ * OUTSIDE the authenticated console shell; everything else mounts inside the shell. Person-3's
+ * feature modules (auth/onboarding/staff/tickets/agent-workspace) mount under admin/agent. */
 
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 
-import { Chat } from "../components/chat";
 import { Card } from "../components";
+import { Chat } from "../components/chat";
+import { AgentWorkspacePage } from "../features/agent-workspace/AgentWorkspacePage";
+import { SignupPage } from "../features/auth/SignupPage";
+import { VerifyPage } from "../features/auth/VerifyPage";
+import { OnboardingPage } from "../features/onboarding/OnboardingPage";
+import { StaffPage } from "../features/staff/StaffPage";
+import { TicketDetailPage } from "../features/tickets/TicketDetailPage";
+import { TicketsPage } from "../features/tickets/TicketsPage";
 import { AppLayout } from "./layout";
 import { useAuth } from "./providers";
 
@@ -56,31 +63,69 @@ function HostedChat() {
   );
 }
 
-function ConsoleRoutes() {
+function AdminSection() {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/admin" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<Placeholder title="Sign up (FE-Auth)" />} />
-      <Route path="/verify" element={<Placeholder title="Verify email (FE-Auth)" />} />
-      <Route
-        path="/admin/*"
-        element={
-          <RequireAuth>
-            <Placeholder title="Admin (onboarding / knowledge / records / settings / analytics)" />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/agent/*"
-        element={
-          <RequireAuth>
-            <Placeholder title="Agent workspace (tickets / queue)" />
-          </RequireAuth>
-        }
-      />
-      <Route path="*" element={<Placeholder title="Not found" />} />
-    </Routes>
+    <div>
+      <nav style={{ display: "flex", gap: 14, marginBottom: 16, fontSize: 14 }}>
+        <Link to="/admin/onboarding">Onboarding</Link>
+        <Link to="/admin/staff">Staff</Link>
+        <Link to="/admin/tickets">Tickets</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<Navigate to="onboarding" replace />} />
+        <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path="staff" element={<StaffPage />} />
+        <Route path="tickets" element={<TicketsPage />} />
+        <Route path="tickets/:id" element={<TicketDetailPage />} />
+        <Route path="knowledge" element={<Placeholder title="Knowledge (person-2)" />} />
+        <Route path="records" element={<Placeholder title="Records (person-2)" />} />
+        <Route path="analytics" element={<Placeholder title="Analytics (person-2)" />} />
+      </Routes>
+    </div>
+  );
+}
+
+function AgentSection() {
+  return (
+    <div>
+      <nav style={{ display: "flex", gap: 14, marginBottom: 16, fontSize: 14 }}>
+        <Link to="/agent">Workspace</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<AgentWorkspacePage />} />
+        <Route path="tickets/:id" element={<TicketDetailPage />} />
+      </Routes>
+    </div>
+  );
+}
+
+function Shell() {
+  return (
+    <AppLayout>
+      <Routes>
+        <Route path="/" element={<Navigate to="/admin" replace />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/verify" element={<VerifyPage />} />
+        <Route
+          path="/admin/*"
+          element={
+            <RequireAuth>
+              <AdminSection />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/agent/*"
+          element={
+            <RequireAuth>
+              <AgentSection />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<Placeholder title="Not found" />} />
+      </Routes>
+    </AppLayout>
   );
 }
 
@@ -88,14 +133,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/chat/:widgetKey" element={<HostedChat />} />
-      <Route
-        path="*"
-        element={
-          <AppLayout>
-            <ConsoleRoutes />
-          </AppLayout>
-        }
-      />
+      <Route path="/*" element={<Shell />} />
     </Routes>
   );
 }
