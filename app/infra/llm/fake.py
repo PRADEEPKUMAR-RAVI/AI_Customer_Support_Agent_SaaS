@@ -1,7 +1,11 @@
-"""FakeLLM — deterministic, offline stand-in (dev/CI default).
+"""FakeLLM — deterministic, offline stand-in (dev/CI default; no OpenAI key).
 
-Returns canned structured output and can replay scripted tool calls, so the engine loop and
-its tests run with no OpenAI key and produce the same output every run.
+Minimally input-aware so it drives a realistic single-retrieve tool loop for ANY query:
+  * first pass (tools available, no tool result yet) → call ``kb_retrieve`` with the user's text
+  * after a tool result is present → return a final answer + the structured control metadata
+
+Crucially it does NOT decide grounding/escalation — the ENGINE decides that from the tool
+RESULT (non-negotiable). So the flow branches on retrieval, not on this fake's cleverness.
 """
 
 from __future__ import annotations
@@ -10,26 +14,30 @@ from typing import Any
 
 from app.infra.llm.base import LLMPort, LLMResult, ToolCall
 
+_DEFAULT_META = {
+    "answer_complete": True,
+    "detected_language": "en",
+    "tags": ["general"],
+    "retrieval_hits": 0,
+    "escalate": False,
+    "escalation_reason": None,
+    "advisory_confidence": 0.9,
+}
+
 
 class FakeLLM(LLMPort):
     supports_tools = True
     supports_structured_output = True
 
-    def __init__(self, *, scripted_tool_calls: list[ToolCall] | None = None,
-                 answer: str = "This is a grounded fake answer.",
-                 structured: dict[str, Any] | None = None) -> None:
-        # Tool calls are popped one per turn to simulate a bounded tool loop.
-        self._scripted = list(scripted_tool_calls or [])
+    def __init__(self, *, answer: str = "Here's what I found in our documentation.") -> None:
         self._answer = answer
-        self._structured = structured or {
-            "answer_complete": True,
-            "detected_language": "en",
-            "tags": [{"name": "general", "status": "approved"}],
-            "retrieval_hits": 1,
-            "escalate": False,
-            "escalation_reason": None,
-            "advisory_confidence": 0.9,
-        }
+
+    @staticmethod
+    def _last_user(messages: list[dict[str, Any]]) -> str:
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                return str(m.get("content", ""))
+        return ""
 
     async def complete(
         self,
@@ -40,12 +48,16 @@ class FakeLLM(LLMPort):
         temperature: float = 0.0,
         model: str | None = None,
     ) -> LLMResult:
-        if self._scripted:
-            call = self._scripted.pop(0)
-            return LLMResult(tool_calls=[call], model=model or "fake")
+        has_tool_result = any(m.get("role") == "tool" for m in messages)
+        if tools and not has_tool_result:
+            return LLMResult(
+                tool_calls=[ToolCall(name="kb_retrieve", arguments={"query": self._last_user(messages)})],
+                model=model or "fake",
+                prompt_tokens=len(str(messages)) // 4,
+            )
         return LLMResult(
             text=self._answer,
-            structured=self._structured if response_schema is not None else None,
+            structured=dict(_DEFAULT_META) if response_schema is not None else None,
             prompt_tokens=len(str(messages)) // 4,
             completion_tokens=len(self._answer) // 4,
             model=model or "fake",

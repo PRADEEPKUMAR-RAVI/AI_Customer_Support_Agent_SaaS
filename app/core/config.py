@@ -72,6 +72,24 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# Centralised model pricing (USD per 1M tokens) so per-turn cost is auditable per provider
+# ([IMP-DAT-5]). Approximate list prices — update as vendor pricing changes. Fakes cost nothing.
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # model_id: (input_per_million, output_per_million)
+    "gpt-4o-mini": (0.15, 0.60),
+    "fake": (0.0, 0.0),
+}
+
+
+def estimate_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
+    """Per-turn cost for one model call, or None if the model's price is unknown."""
+    price = MODEL_PRICING.get(model)
+    if price is None:
+        return None
+    inp, out = price
+    return round((prompt_tokens * inp + completion_tokens * out) / 1_000_000, 8)
+
+
 class TenantDefaults:
     """Reference defaults (§11). Seed values for ``agent_settings``; tenant-overridable."""
 
