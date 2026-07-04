@@ -7,6 +7,8 @@ Access token is returned in the body (SPA holds it in memory); the refresh token
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Request, Response
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -24,8 +26,17 @@ from app.core.security import (
 from app.domain.tenancy.defaults import default_agent_settings
 from app.infra.db.engine import SessionLocal
 from app.infra.db.models.tenant import AgentSettings, Staff, Tenant, WidgetKey
-from app.infra.db.session import auth_bootstrap_session, set_tenant_guc
-from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse
+from app.infra.db.session import auth_bootstrap_session, set_tenant_guc, with_tenant
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+    TokenResponse,
+)
+
+RESET_TOKEN_TTL_SECONDS = 3600
+INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 3600
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -156,3 +167,77 @@ async def refresh(request: Request, response: Response) -> TokenResponse:
 async def logout(response: Response) -> dict:
     response.delete_cookie(REFRESH_COOKIE, path="/")
     return {"status": "logged_out"}
+
+
+_GENERIC_RESET_RESPONSE = {"message": "If that email is registered, a reset link has been sent."}
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest) -> dict:
+    # Same response whether or not the email exists — an account-enumeration oracle here would
+    # undermine the exact neutral-message discipline the rest of the system relies on
+    # (not_found/unverified parity in the record-lookup flow).
+    async with auth_bootstrap_session() as session:
+        staff = (
+            await session.execute(select(Staff).where(Staff.email == body.email))
+        ).scalar_one_or_none()
+    if staff is not None and staff.is_active:
+        async with with_tenant(staff.tenant_id) as session:
+            reset_token = create_token(
+                {
+                    "typ": "reset",
+                    "sub": str(staff.id),
+                    "tenant_id": str(staff.tenant_id),
+                    "email": staff.email,
+                    "ver": staff.token_version,
+                },
+                RESET_TOKEN_TTL_SECONDS,
+            )
+            await emit(
+                session,
+                event_type="email.password_reset",
+                payload={"to": staff.email, "token": reset_token},
+            )
+    return _GENERIC_RESET_RESPONSE
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest) -> dict:
+    """Also accepts a staff invite (``typ=invite``) — same set-password path either way.
+
+    Single-use + auto-invalidated-on-password-change via a ``token_version`` counter: the token
+    embeds the version current at mint time (``ver``) and is honoured only if it still matches
+    the staff row's current version. Using it bumps the version, so a replay of the same token —
+    or of any older outstanding token — fails the match. (A wall-clock ``iat`` comparison can't
+    do this reliably: two events in the same second round to equal, which a naive
+    newer-than check can't tell apart from a replay — a version counter has no such race.)
+    """
+    try:
+        claims = decode_token(body.token)
+    except Exception as exc:  # noqa: BLE001
+        raise AppError(status_code=400, title="Invalid or expired token",
+                       code="invalid_token") from exc
+    if claims.get("typ") not in ("reset", "invite"):
+        raise AppError(status_code=400, title="Wrong token type", code="invalid_token")
+
+    async with with_tenant(claims["tenant_id"]) as session:
+        staff = (
+            await session.execute(select(Staff).where(Staff.id == claims["sub"]))
+        ).scalar_one_or_none()
+        if staff is None:
+            raise AppError(status_code=400, title="Invalid or expired token",
+                           code="invalid_token")
+        if claims.get("ver") != staff.token_version:
+            raise AppError(status_code=400, title="This link has already been used",
+                           code="token_already_used")
+        await session.execute(
+            update(Staff)
+            .where(Staff.id == staff.id)
+            .values(
+                password_hash=hash_password(body.new_password),
+                password_changed_at=datetime.now(timezone.utc),
+                token_version=Staff.token_version + 1,
+                email_verified=True,
+            )
+        )
+    return {"status": "password_updated"}

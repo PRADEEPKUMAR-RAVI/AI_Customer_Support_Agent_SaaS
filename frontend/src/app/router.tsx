@@ -1,9 +1,16 @@
-/** Role-gated routing. Feature modules (onboarding, knowledge, records, tickets, workspace,
- * analytics) mount under the admin/agent shells as the two juniors build them. */
+/** Role-gated routing. Feature modules (knowledge, records, analytics, agent workspace) mount
+ * under the admin/agent shells as person-2/person-1 build them. */
 
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 
 import { Card } from "../components";
+import { AgentWorkspacePage } from "../features/agent-workspace/AgentWorkspacePage";
+import { SignupPage } from "../features/auth/SignupPage";
+import { VerifyPage } from "../features/auth/VerifyPage";
+import { OnboardingPage } from "../features/onboarding/OnboardingPage";
+import { StaffPage } from "../features/staff/StaffPage";
+import { TicketDetailPage } from "../features/tickets/TicketDetailPage";
+import { TicketsPage } from "../features/tickets/TicketsPage";
 import { AppLayout } from "./layout";
 import { useAuth } from "./providers";
 
@@ -42,19 +49,55 @@ const Placeholder = ({ title }: { title: string }) => (
   </Card>
 );
 
+function AdminSection() {
+  return (
+    <div>
+      <nav style={{ display: "flex", gap: 14, marginBottom: 16, fontSize: 14 }}>
+        <Link to="/admin/onboarding">Onboarding</Link>
+        <Link to="/admin/staff">Staff</Link>
+        <Link to="/admin/tickets">Tickets</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<Navigate to="onboarding" replace />} />
+        <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path="staff" element={<StaffPage />} />
+        <Route path="tickets" element={<TicketsPage />} />
+        <Route path="tickets/:id" element={<TicketDetailPage />} />
+        <Route path="knowledge" element={<Placeholder title="Knowledge (person-2)" />} />
+        <Route path="records" element={<Placeholder title="Records (person-2)" />} />
+        <Route path="analytics" element={<Placeholder title="Analytics (person-2)" />} />
+      </Routes>
+    </div>
+  );
+}
+
+function AgentSection() {
+  return (
+    <div>
+      <nav style={{ display: "flex", gap: 14, marginBottom: 16, fontSize: 14 }}>
+        <Link to="/agent">Workspace</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<AgentWorkspacePage />} />
+        <Route path="tickets/:id" element={<TicketDetailPage />} />
+      </Routes>
+    </div>
+  );
+}
+
 export function AppRouter() {
   return (
     <AppLayout>
       <Routes>
         <Route path="/" element={<Navigate to="/admin" replace />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<Placeholder title="Sign up (FE-Auth)" />} />
-        <Route path="/verify" element={<Placeholder title="Verify email (FE-Auth)" />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/verify" element={<VerifyPage />} />
         <Route
           path="/admin/*"
           element={
             <RequireAuth>
-              <Placeholder title="Admin (onboarding / knowledge / records / settings / analytics)" />
+              <AdminSection />
             </RequireAuth>
           }
         />
@@ -62,7 +105,7 @@ export function AppRouter() {
           path="/agent/*"
           element={
             <RequireAuth>
-              <Placeholder title="Agent workspace (tickets / queue)" />
+              <AgentSection />
             </RequireAuth>
           }
         />

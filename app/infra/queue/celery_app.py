@@ -36,4 +36,8 @@ celery_app.conf.update(
         "app.workers.scheduled.*": {"queue": "interactive"},
     },
     timezone="UTC",
+    # Task modules imported when a worker/beat process starts (not at this module's own import
+    # time — `imports` is lazy, so a task module that itself imports `celery_app` never creates
+    # a circular import). Add each new app/workers/*.py module here as it's built.
+    imports=("app.workers.scheduled",),
 )

@@ -70,3 +70,37 @@ export async function logout(): Promise<void> {
   accessToken = null;
   await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
 }
+
+/** Mirrors the backend `Industry` enum (`app/domain/records/schemas.py`) — the tenant's one
+ * industry for the POC, picked at signup. */
+export type Industry = "retail" | "logistics" | "telecom" | "healthcare" | "travel";
+
+export interface SignupPayload {
+  email: string;
+  password: string;
+  workspace_name: string;
+  industry: Industry;
+}
+
+async function _problemDetail(res: Response): Promise<string> {
+  const body = await res.json().catch(() => null);
+  return body?.detail ?? body?.title ?? `request failed: ${res.status}`;
+}
+
+export async function signup(payload: SignupPayload): Promise<{ tenant_id: string; message: string }> {
+  const res = await fetch(`${API_BASE}/auth/signup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await _problemDetail(res));
+  return res.json();
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/auth/verify-email?token=${encodeURIComponent(token)}`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error(await _problemDetail(res));
+}
