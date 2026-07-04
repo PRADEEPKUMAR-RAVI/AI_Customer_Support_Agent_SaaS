@@ -1,0 +1,30 @@
+# Keep the Docker build context small + reproducible. The api image only needs
+# pyproject.toml, alembic.ini, app/, migrations/, contracts/ (see docker/api.Dockerfile).
+.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Frontend + node
+frontend/
+**/node_modules/
+
+# VCS / editor / local
+.git/
+.github/
+.idea/
+.vscode/
+
+# Secrets + local env (never bake into an image)
+.env
+.env.*
+
+# Docs / meta not needed at runtime
+docs/
+*.md
+Makefile
+docker-compose.yml
+pgdata/
