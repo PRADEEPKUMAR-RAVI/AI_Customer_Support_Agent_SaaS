@@ -1,0 +1,16 @@
+order_id,email,status,eta,tracking_ref,tracking_url
+1001,jane.doe@example.com,shipped,2026-07-08,TRK1001AB,https://carrier.example.com/track/TRK1001AB
+1002,MARK.SPENCER@Example.com,processing,2026-07-11,,
+1003,li.wei@example.com,delivered,2026-07-01,TRK1003CD,https://carrier.example.com/track/TRK1003CD
+1004,sofia.garcia@example.com,placed,2026-07-14,,
+1005,arjun.patel@example.com,cancelled,,,
+1006,emma.brown@example.com,shipped,2026-07-09,TRK1006EF,https://carrier.example.com/track/TRK1006EF
+1007,noah.wilson@example.com,delivered,2026-06-28,TRK1007GH,https://carrier.example.com/track/TRK1007GH
+1008,olivia.jones@example.com,processing,2026-07-12,,
+1009,liam.miller@example.com,shipped,2026-07-10,TRK1009IJ,https://carrier.example.com/track/TRK1009IJ
+1010,ava.davis@example.com,delivered,2026-06-30,TRK1010KL,https://carrier.example.com/track/TRK1010KL
+1011,yuki.tanaka@example.com,placed,2026-07-15,,
+1012,mia.rodriguez@example.com,shipped,2026-07-08,TRK1012MN,https://carrier.example.com/track/TRK1012MN
+1013,james.taylor@example.com,cancelled,,,
+1014,charlotte.lee@example.com,delivered,2026-06-27,TRK1014OP,https://carrier.example.com/track/TRK1014OP
+1015,benjamin.white@example.com,processing,2026-07-13,,

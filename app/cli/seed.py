@@ -11,9 +11,10 @@ Admin emails use a normal TLD (not the reserved ``.test``): the login/signup DTO
 could never actually log in. Seeded admins are the documented "admin logs into the seeded
 tenant" checkpoint, so they must be loginable.
 
-Tenant-scoped rows auto-fill ``tenant_id`` from the GUC (set via ``set_tenant_guc``) and satisfy
-RLS ``WITH CHECK``. (M4 record datasets with deliberately colliding keys like ``order_id=1001``
-across tenants are added when P2 builds M4 — noted, not silently skipped.)
+The KB chunk is embedded with the CONFIGURED embedder (fake in dev/CI, real self-hosted BGE when
+``USE_FAKE_EMBEDDINGS=false``) and stamped with the matching ``embedder_id`` so seeded vectors
+never mix fake + real vector spaces at retrieval time. (M4 record datasets ship as CSVs under
+``sample_data/`` and load via ``POST /records/datasets``, not this seed.)
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from app.infra.db.engine import SessionLocal
 from app.infra.db.models.knowledge import KbChunk, Source
 from app.infra.db.models.tenant import AgentSettings, Staff, Tenant, WidgetKey
 from app.infra.db.session import set_tenant_guc
-from app.infra.embeddings.fake import FakeEmbedder
+from app.infra.embeddings.router import get_embedder
 
 _TENANTS = [
     ("Acme Retail", Industry.RETAIL, "admin@acme-retail.com", "wk_seed_retail"),
@@ -42,7 +43,10 @@ _SEED_DOC = "Our return policy allows returns within 30 days of delivery."
 
 async def _seed() -> None:
     settings = get_settings()
-    embedder = FakeEmbedder(dim=settings.embed_dim)
+    # Use the configured embedder so seeded chunks match the running stack (fake in dev/CI, real
+    # when USE_FAKE_EMBEDDINGS=false) — avoids mixing fake + real vector spaces at retrieval time.
+    embedder = get_embedder()
+    embedder_id = "fake" if settings.use_fake_embeddings else settings.embed_model
     vector = (await embedder.embed([_SEED_DOC]))[0]
 
     # Idempotency: skip tenants whose widget_key already exists. widget_key has a public SELECT
@@ -85,7 +89,7 @@ async def _seed() -> None:
                         content=_SEED_DOC,
                         content_hash="seed-return-policy",
                         embedding=vector,
-                        embedder_id="fake",
+                        embedder_id=embedder_id,
                         dim=settings.embed_dim,
                         language="en",
                     )

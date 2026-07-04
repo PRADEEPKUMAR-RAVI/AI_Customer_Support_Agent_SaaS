@@ -14,7 +14,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,10 +54,19 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str = ""
     embeddings_provider: Literal["bge_onnx", "cohere"] = "bge_onnx"
-    embed_model: str = "BAAI/bge-m3"
-    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    # fastembed lacks BGE-M3; use the closest self-hosted 1024-dim multilingual pair (both ONNX,
+    # commercial-safe). embed_dim must stay 1024 to match the kb_chunk.embedding column.
+    embed_model: str = "intfloat/multilingual-e5-large"
+    rerank_model: str = "BAAI/bge-reranker-base"
     embed_dim: int = 1024
+    # Where fastembed caches the ONNX weights. Pinned to a persistent path in the Docker image so
+    # the model is baked into an image layer (no per-machine download). None -> fastembed default.
+    embed_cache_dir: str | None = None
     cohere_api_key: str = ""
+
+    # M3 ingestion: when true, the knowledge API runs ingest inline in the request instead of
+    # enqueuing the Celery batch task — for broker-less dev/CI/tests (deterministic, no worker).
+    ingest_inline: bool = False
 
     frontend_origin: str = "http://localhost:5173"
 

@@ -20,6 +20,8 @@ celery_app = Celery(
     "cs_agent",
     broker=_settings.redis_url,
     backend=None,  # fire-and-forget; results not needed (avoids Redis memory growth)
+    # Task modules the worker must import to register tasks (extend as workers land).
+    include=["app.workers.ingestion"],
 )
 
 celery_app.conf.update(
@@ -38,10 +40,12 @@ celery_app.conf.update(
     # Import task modules on worker/beat startup (avoids a celery_app <-> tasks import cycle).
     # person-3's `scheduled` module self-appends its own `sweep-ticket-timers` beat entry on
     # import, so it isn't listed in beat_schedule here.
+    # NOTE: person-2's real ingestion tasks register via the Celery(include=[...]) above
+    # (app.workers.ingestion). The old P1 `ingestion_tasks` stub (a not_implemented placeholder)
+    # is intentionally dropped here — superseded, and keeping it registered a dead task name.
     imports=(
         "app.workers.notification_tasks",
         "app.workers.scheduled",
-        "app.workers.ingestion_tasks",
         "app.workers.crawl_tasks",
         "app.workers.embedding_tasks",
     ),

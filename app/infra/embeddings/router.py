@@ -18,7 +18,12 @@ def get_embedder() -> EmbeddingPort:
     if s.embeddings_provider == "bge_onnx":
         from app.infra.embeddings.bge_onnx_client import BgeOnnxClient
 
-        return BgeOnnxClient(embed_model=s.embed_model, rerank_model=s.rerank_model, dim=s.embed_dim)
+        return BgeOnnxClient(
+            embed_model=s.embed_model,
+            rerank_model=s.rerank_model,
+            dim=s.embed_dim,
+            cache_dir=s.embed_cache_dir,
+        )
     raise NotImplementedError(
         "Cohere adapter is an optional post-Phase-0 swap; default is self-hosted bge_onnx."
     )

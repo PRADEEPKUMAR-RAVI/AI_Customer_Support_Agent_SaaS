@@ -1,15 +1,20 @@
 /** Role-gated routing. The public hosted chat page (`/chat/:widgetKey`) renders full-screen
- * OUTSIDE the authenticated console shell; everything else mounts inside the shell. Person-3's
- * feature modules (auth/onboarding/staff/tickets/agent-workspace) mount under admin/agent. */
+ * OUTSIDE the authenticated console shell; everything else mounts inside the shell. Feature
+ * modules: person-3 (auth/onboarding/staff/tickets/agent-workspace) + person-2 (knowledge/
+ * records/analytics/agent-settings) mount under admin/agent. */
 
 import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { Card } from "../components";
 import { Chat } from "../components/chat";
 import { AgentWorkspacePage } from "../features/agent-workspace/AgentWorkspacePage";
+import { AgentSettingsPage } from "../features/agent-settings/AgentSettingsPage";
+import { AnalyticsPage } from "../features/analytics/AnalyticsPage";
 import { SignupPage } from "../features/auth/SignupPage";
 import { VerifyPage } from "../features/auth/VerifyPage";
+import { KnowledgePage } from "../features/knowledge/KnowledgePage";
 import { OnboardingPage } from "../features/onboarding/OnboardingPage";
+import { RecordsPage } from "../features/records/RecordsPage";
 import { StaffPage } from "../features/staff/StaffPage";
 import { TicketDetailPage } from "../features/tickets/TicketDetailPage";
 import { TicketsPage } from "../features/tickets/TicketsPage";
@@ -66,20 +71,26 @@ function HostedChat() {
 function AdminSection() {
   return (
     <div>
-      <nav style={{ display: "flex", gap: 14, marginBottom: 16, fontSize: 14 }}>
+      <nav style={{ display: "flex", gap: 14, marginBottom: 16, fontSize: 14, flexWrap: "wrap" }}>
         <Link to="/admin/onboarding">Onboarding</Link>
+        <Link to="/admin/knowledge">Knowledge</Link>
+        <Link to="/admin/records">Records</Link>
         <Link to="/admin/staff">Staff</Link>
         <Link to="/admin/tickets">Tickets</Link>
+        <Link to="/admin/analytics">Analytics</Link>
+        <Link to="/admin/settings">Settings</Link>
       </nav>
       <Routes>
         <Route path="/" element={<Navigate to="onboarding" replace />} />
         <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path="knowledge" element={<KnowledgePage />} />
+        <Route path="records" element={<RecordsPage />} />
         <Route path="staff" element={<StaffPage />} />
         <Route path="tickets" element={<TicketsPage />} />
         <Route path="tickets/:id" element={<TicketDetailPage />} />
-        <Route path="knowledge" element={<Placeholder title="Knowledge (person-2)" />} />
-        <Route path="records" element={<Placeholder title="Records (person-2)" />} />
-        <Route path="analytics" element={<Placeholder title="Analytics (person-2)" />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="settings" element={<AgentSettingsPage />} />
+        <Route path="*" element={<Placeholder title="Admin — not found" />} />
       </Routes>
     </div>
   );

@@ -82,9 +82,12 @@ async def lookup_record_tool(
             await ratelimit.hit(counter_key, limit=max_attempts,
                                 window_seconds=TenantDefaults.VERIFY_LOCKOUT_SECONDS)
 
-    resolver = resolver or get_resolver(tenant_id="", record_type=record_type)
+    # Resolver dispatch is M4's (person-2): get_resolver is async + session-scoped and returns the
+    # Upload/DB/API resolver for this record_type. The resolver is FETCH-ONLY ([IMP-DEL-3]); the
+    # verify assembly below stays here in M2. Tests may inject a fake `resolver=` to stay DB-free.
+    resolver = resolver or await get_resolver(session, tenant_id, record_type)
     try:
-        raw = await resolver.fetch(tenant_id="", record_type=record_type, key=key)
+        raw = await resolver.fetch(str(tenant_id), record_type, str(key))
     except ConnectorError:
         # Normalised tool failure — the engine routes this to fallback/escalation (§4.9/§4.1).
         return {"status": "connector_error"}
