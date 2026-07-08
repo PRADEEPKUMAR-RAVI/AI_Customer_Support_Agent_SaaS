@@ -31,3 +31,5 @@ class TurnMetric(Base, TenantMixin, TimestampMixin):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     # Per-model token+cost breakdown, e.g. [{"model": "gpt-4o-mini", "prompt": 120, "completion": 40, "cost_usd": 0.0001}]
     cost: Mapped[list | None] = mapped_column(JSONB)
+    # Thumbs up/down CSAT for this turn (§5.6), set later by the feedback endpoint; NULL = unrated.
+    csat: Mapped[str | None] = mapped_column(String(4))  # "up" | "down" | NULL

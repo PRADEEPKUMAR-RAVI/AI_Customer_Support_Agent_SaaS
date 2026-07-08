@@ -23,8 +23,9 @@ from app.core.config import (
     OUTBOX_DRAIN_BATCH,
     OUTBOX_MAX_ATTEMPTS,
     OUTBOX_REAPER_STUCK_SECONDS,
+    get_settings,
 )
-from app.infra.db.engine import SessionLocal
+from app.infra.db.engine import WorkerSessionLocal
 from app.infra.db.models.outbox import EmailLog, Outbox
 from app.infra.db.models.tenant import Tenant
 from app.infra.db.session import with_tenant
@@ -37,21 +38,51 @@ log = logging.getLogger(__name__)
 
 def _render(event_type: str, payload: dict) -> tuple[str, str, str] | None:
     """(recipient, subject, body) for an outbox EMAIL event, or None to no-op (non-email events
-    like ``ticket.*_summary.requested`` fall through and are marked done without sending). Bodies
-    are minimal for the POC (no HTML templating). Event names match the emit() call sites across
-    M1 (auth), M6 (escalation_service), and admin staff-invite."""
+    like ``ticket.*_summary.requested`` fall through and are marked done without sending). Event
+    names match the emit() call sites across M1 (auth), M6 (escalation_service), and admin invite.
+
+    Bodies are plain text with a CLICKABLE action link built from ``FRONTEND_ORIGIN`` + the token
+    (email clients auto-linkify the URL) — the raw token is not shown. NOTE: the link is only
+    reachable by the recipient if FRONTEND_ORIGIN is a URL THEY can open — fine for local testing on
+    your own machine (http://localhost:5173), but set it to your deployed domain before inviting
+    real staff on other machines, or their link will point at their own localhost."""
+    origin = get_settings().frontend_origin.rstrip("/")
+    token = payload.get("token", "")
     if event_type == "email.verify":
-        return payload["to"], "Verify your account", f"Confirm your email. Token: {payload.get('token')}"
+        link = f"{origin}/verify?token={token}"
+        return (payload["to"], "Verify your account",
+                "Welcome! Please confirm your email address to activate your account:\n\n"
+                f"{link}\n\nIf you didn't create this account, you can safely ignore this email.")
     if event_type == "email.password_reset":
+        link = f"{origin}/reset?token={token}"
         return (payload["to"], "Reset your password",
-                f"Use this token to reset your password: {payload.get('token')}")
+                "We received a request to reset your password. Choose a new one here "
+                "(this link expires in 1 hour):\n\n"
+                f"{link}\n\nIf you didn't request this, you can safely ignore this email.")
     if event_type == "email.staff_invite":
-        return (payload["to"], "You've been invited",
-                f"You've been invited to a workspace. Accept with this token: {payload.get('token')}")
+        link = f"{origin}/reset?token={token}"
+        return (payload["to"], "You've been invited to a workspace",
+                "You've been invited to a workspace on the AI Customer Support Agent.\n\n"
+                "Accept the invitation and set your password here (link expires in 7 days):\n\n"
+                f"{link}")
+    if event_type == "email.escalation_agent_notify":
+        # Sent to EACH available agent so any of them can claim the escalated ticket.
+        pr = payload.get("priority")
+        pr_note = " (high priority)" if pr == "high" else ""
+        return (payload["to"], f"New escalation to claim{pr_note}",
+                f"A conversation was escalated{pr_note} (reason: {payload.get('reason')}) and is "
+                f"waiting in the queue. Claim it in your agent workspace to help the customer:\n\n"
+                f"{origin}/inbox")
     if event_type in ("email.escalation_support_notify", "escalation.support_notify"):
         return (payload["to"], "A customer is waiting for a human agent",
-                f"Ticket {payload.get('ticket_id')} was escalated (reason: {payload.get('reason')}). "
-                f"Please claim it in the agent workspace.")
+                f"Ticket {payload.get('ticket_id')} was escalated (reason: {payload.get('reason')}).\n\n"
+                f"Please claim it in the agent workspace:\n\n{origin}/inbox")
+    if event_type == "email.customer_reply":
+        # After-hours follow-up: the customer left an email, an agent has now replied — deliver it.
+        return (payload["to"], "You have a new reply from our support team",
+                "Our support team has replied to your request:\n\n"
+                f"{payload.get('reply', '')}\n\n"
+                "You can reply by returning to the chat on our website.")
     return None
 
 
@@ -125,7 +156,7 @@ async def _deliver(tid, row: dict) -> str:
 
 
 async def _drain_all() -> dict:
-    async with SessionLocal() as s:  # tenant table is not RLS-scoped
+    async with WorkerSessionLocal() as s:  # tenant table is not RLS-scoped
         tenant_ids = (await s.execute(select(Tenant.id).where(Tenant.status == "active"))).scalars().all()
     totals = {"claimed": 0, "sent": 0, "deduped": 0, "retry": 0, "dead": 0, "skipped": 0}
     for tid in tenant_ids:

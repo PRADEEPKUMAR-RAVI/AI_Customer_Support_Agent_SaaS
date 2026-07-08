@@ -21,7 +21,7 @@ from typing import AsyncIterator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.db.engine import SessionLocal, get_bypass_sessionmaker
+from app.infra.db.engine import WorkerSessionLocal, get_bypass_sessionmaker
 
 _SET_TENANT = text("SELECT set_config('app.tenant_id', :tid, true)")
 
@@ -32,8 +32,11 @@ async def set_tenant_guc(session: AsyncSession, tenant_id) -> None:
 
 @asynccontextmanager
 async def with_tenant(tenant_id) -> AsyncIterator[AsyncSession]:
-    """Worker-side tenant context. Opens a transaction, sets the GUC, commits on success."""
-    async with SessionLocal() as session:
+    """Worker-side tenant context. Opens a transaction, sets the GUC, commits on success.
+
+    Uses the NullPool ``WorkerSessionLocal`` — workers run each task in a fresh event loop, so a
+    pooled connection can't be reused across loops (see app/infra/db/engine.py)."""
+    async with WorkerSessionLocal() as session:
         async with session.begin():
             await set_tenant_guc(session, tenant_id)
             yield session

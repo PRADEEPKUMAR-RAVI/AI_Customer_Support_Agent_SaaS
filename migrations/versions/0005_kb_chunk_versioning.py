@@ -21,10 +21,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE source ADD COLUMN serving_version integer NOT NULL DEFAULT 0")
-    op.execute("ALTER TABLE kb_chunk ADD COLUMN version integer NOT NULL DEFAULT 0")
+    # Idempotent (IF NOT EXISTS): on a FRESH DB, 0001's Base.metadata.create_all already builds
+    # these from the current (post-P2) models, so this must no-op there; on a pre-P2 DB (0001 ran
+    # before these columns existed) it genuinely adds them. Same for the index.
+    op.execute("ALTER TABLE source ADD COLUMN IF NOT EXISTS serving_version integer NOT NULL DEFAULT 0")
+    op.execute("ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 0")
     # Retrieval and the delete-last sweep both filter by (source_id, version).
-    op.execute("CREATE INDEX ix_kb_chunk_source_version ON kb_chunk (source_id, version)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_kb_chunk_source_version ON kb_chunk (source_id, version)")
 
 
 def downgrade() -> None:

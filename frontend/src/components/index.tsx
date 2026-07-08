@@ -1,33 +1,30 @@
-/** Minimal design-system primitives so feature modules have a consistent starting point. */
+/** Backwards-compatible primitives. The original inline-styled Button/Card/Spinner are kept as
+ * thin shims over the shadcn design system so not-yet-restyled feature pages stay consistent and
+ * keep compiling during the redesign. New code should import from `@/components/ui/*` directly. */
 
+import { Loader2 } from "lucide-react";
 import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
 
-export function Button(
-  props: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" }
-) {
-  const { variant = "primary", style, ...rest } = props;
-  const base: React.CSSProperties = {
-    padding: "8px 14px",
-    borderRadius: 8,
-    border: "1px solid transparent",
-    cursor: "pointer",
-    fontSize: 14,
-  };
-  const variants: Record<string, React.CSSProperties> = {
-    primary: { background: "#2563eb", color: "#fff" },
-    ghost: { background: "transparent", color: "#2563eb", borderColor: "#2563eb" },
-  };
-  return <button style={{ ...base, ...variants[variant], ...style }} {...rest} />;
+import { Button as UiButton } from "@/components/ui/button";
+
+export function Button({
+  variant = "primary",
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" }) {
+  return <UiButton variant={variant === "ghost" ? "ghost" : "default"} {...rest} />;
 }
 
 export function Card({ children }: PropsWithChildren) {
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "#fff" }}>
-      {children}
-    </div>
+    <div className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm">{children}</div>
   );
 }
 
 export function Spinner() {
-  return <span role="status" aria-live="polite">Loading…</span>;
+  return (
+    <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" />
+      Loading…
+    </span>
+  );
 }

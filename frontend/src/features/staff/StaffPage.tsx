@@ -1,119 +1,376 @@
 /** FE-Staff — admin-only invite/manage staff. Mounted at `/admin/staff`. */
 
-import type { FormEvent } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
+import { UserPlus, Users } from "lucide-react";
+import { toast } from "sonner";
+import { z } from "zod";
 
-import { Button, Card, Spinner } from "../../components";
-import { api, unwrap } from "../../lib/api";
+import { PageHeader } from "@/components/page-header";
+import { DataTable } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
+import { StatusBadge } from "@/components/status-badge";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { api, unwrap } from "@/lib/api";
+import type { components } from "@/api/generated/schema";
 
-interface Staff {
-  id: string;
-  email: string;
-  role: string;
-  is_active: boolean;
-  email_verified: boolean;
+type Staff = components["schemas"]["StaffResponse"];
+type StaffUpdate = components["schemas"]["StaffUpdateRequest"];
+
+const STAFF_QUERY_KEY = ["admin", "staff"] as const;
+const ROLES = ["admin", "agent"] as const;
+
+function titleCase(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
-const STAFF_QUERY_KEY = ["staff"];
+function roleBadgeVariant(role: string): "default" | "secondary" | "outline" {
+  if (role === "admin") return "default";
+  if (role === "agent") return "secondary";
+  return "outline";
+}
 
 export function StaffPage() {
-  const queryClient = useQueryClient();
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  const { data: staff, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: STAFF_QUERY_KEY,
     queryFn: async () => unwrap<Staff[]>(await api.GET("/api/v1/admin/staff")),
   });
 
-  const invite = useMutation({
-    mutationFn: async (body: { email: string; role: string }) =>
-      unwrap(await api.POST("/api/v1/admin/staff", { body })),
-    onSuccess: () => {
-      setInviteError(null);
+  const columns = useMemo<ColumnDef<Staff>[]>(
+    () => [
+      {
+        accessorKey: "email",
+        header: "Teammate",
+        cell: ({ row }) => {
+          const s = row.original;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium text-foreground">{s.email}</span>
+              <span className="text-xs text-muted-foreground">
+                {s.email_verified ? "Email verified" : "Invitation pending"}
+              </span>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "role",
+        header: "Role",
+        cell: ({ row }) => (
+          <Badge variant={roleBadgeVariant(row.original.role)}>
+            {titleCase(row.original.role)}
+          </Badge>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (row) => (row.is_active ? "active" : "suspended"),
+        cell: ({ row }) => (
+          <StatusBadge value={row.original.is_active ? "active" : "suspended"} />
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        enableSorting: false,
+        cell: ({ row }) => <StaffRowActions staff={row.original} />,
+      },
+    ],
+    []
+  );
+
+  return (
+    <>
+      <PageHeader
+        title="Staff"
+        description="Invite teammates and manage who can access the support console."
+        actions={<InviteTeammateDialog />}
+      />
+      <DataTable
+        columns={columns}
+        data={data ?? []}
+        loading={isLoading}
+        error={isError}
+        onRetry={() => void refetch()}
+        empty={
+          <EmptyState
+            icon={Users}
+            title="No teammates yet"
+            description="Invite an admin or agent to help resolve customer conversations."
+            action={<InviteTeammateDialog />}
+          />
+        }
+      />
+    </>
+  );
+}
+
+/** Per-row role change + activate/deactivate, each PATCHing `/admin/staff/{id}`. */
+function StaffRowActions({ staff }: { staff: Staff }) {
+  const queryClient = useQueryClient();
+
+  const update = useMutation({
+    mutationFn: async (patch: StaffUpdate) =>
+      unwrap<Staff>(
+        await api.PATCH("/api/v1/admin/staff/{staff_id}", {
+          params: { path: { staff_id: staff.id } },
+          body: patch,
+        })
+      ),
+    onSuccess: (_data, patch) => {
+      const message =
+        patch.is_active === false
+          ? "Teammate deactivated"
+          : patch.is_active === true
+            ? "Teammate reactivated"
+            : "Role updated";
+      toast.success(message);
       void queryClient.invalidateQueries({ queryKey: STAFF_QUERY_KEY });
     },
     onError: (err: unknown) => {
-      setInviteError(err instanceof Error ? err.message : "Invite failed");
+      toast.error(err instanceof Error ? err.message : "Update failed");
     },
   });
 
-  const setActive = useMutation({
-    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) =>
-      unwrap(
-        await api.PATCH("/api/v1/admin/staff/{staff_id}", {
-          params: { path: { staff_id: id } },
-          body: { is_active },
+  // Re-issue a fresh invite email for a teammate who hasn't accepted yet (lost/expired link).
+  const resend = useMutation({
+    mutationFn: async () =>
+      unwrap<Staff>(
+        await api.POST("/api/v1/admin/staff/{staff_id}/resend-invite", {
+          params: { path: { staff_id: staff.id } },
         })
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: STAFF_QUERY_KEY }),
+    onSuccess: () => {
+      toast.success("Invite re-sent", {
+        description: `A fresh invite email is on its way to ${staff.email}.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: STAFF_QUERY_KEY });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Couldn't resend the invite");
+    },
   });
 
-  function handleInvite(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const email = (form.elements.namedItem("email") as HTMLInputElement).value;
-    const role = (form.elements.namedItem("role") as HTMLSelectElement).value;
-    invite.mutate({ email, role }, { onSuccess: () => form.reset() });
+  // Ensure the current role is always selectable even if it's outside the standard set.
+  const roleOptions = useMemo(
+    () => Array.from(new Set<string>([...ROLES, staff.role])),
+    [staff.role]
+  );
+
+  const busy = update.isPending || resend.isPending;
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Select
+        value={staff.role}
+        disabled={busy}
+        onValueChange={(role) => {
+          if (role !== staff.role) update.mutate({ role });
+        }}
+      >
+        <SelectTrigger
+          size="sm"
+          className="w-[116px]"
+          aria-label={`Change role for ${staff.email}`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="end">
+          {roleOptions.map((role) => (
+            <SelectItem key={role} value={role}>
+              {titleCase(role)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {!staff.email_verified ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => resend.mutate()}
+          title="Send a fresh invite email (their link expired or was lost)"
+        >
+          {resend.isPending ? "Sending…" : "Resend invite"}
+        </Button>
+      ) : null}
+
+      {staff.is_active ? (
+        <ConfirmDialog
+          trigger={
+            <Button variant="outline" size="sm" disabled={busy}>
+              Deactivate
+            </Button>
+          }
+          title="Deactivate teammate?"
+          description={`${staff.email} will immediately lose access to the console until reactivated.`}
+          confirmText="Deactivate"
+          destructive
+          onConfirm={() => update.mutate({ is_active: false })}
+        />
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => update.mutate({ is_active: true })}
+        >
+          Reactivate
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const inviteSchema = z.object({
+  email: z.string().min(1, "Email is required").email("Enter a valid email address"),
+  role: z.enum(ROLES),
+});
+
+type InviteValues = z.infer<typeof inviteSchema>;
+
+/** Invite dialog: react-hook-form + zod → POST `/admin/staff`. */
+function InviteTeammateDialog() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const form = useForm<InviteValues>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: { email: "", role: "agent" },
+  });
+
+  const invite = useMutation({
+    mutationFn: async (values: InviteValues) =>
+      unwrap<Staff>(await api.POST("/api/v1/admin/staff", { body: values })),
+    onSuccess: (_data, values) => {
+      toast.success(`Invitation sent to ${values.email}`);
+      void queryClient.invalidateQueries({ queryKey: STAFF_QUERY_KEY });
+      setOpen(false);
+      form.reset();
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Invite failed");
+    },
+  });
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) form.reset();
   }
 
   return (
-    <Card>
-      <h2>Staff</h2>
-      <form
-        onSubmit={handleInvite}
-        style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}
-      >
-        <input name="email" type="email" placeholder="new-teammate@company.com" required />
-        <select name="role" defaultValue="agent">
-          <option value="agent">Agent</option>
-          <option value="admin">Admin</option>
-        </select>
-        <Button type="submit" disabled={invite.isPending}>
-          {invite.isPending ? "Inviting…" : "Invite"}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button>
+          <UserPlus />
+          Invite teammate
         </Button>
-      </form>
-      {inviteError && (
-        <p role="alert" style={{ color: "#dc2626" }}>
-          {inviteError}
-        </p>
-      )}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite teammate</DialogTitle>
+          <DialogDescription>
+            Send an invitation to join this workspace. They&apos;ll receive an email to set up their
+            account.
+          </DialogDescription>
+        </DialogHeader>
 
-      {isLoading && <Spinner />}
-      {isError && <p role="alert" style={{ color: "#dc2626" }}>Failed to load staff.</p>}
-      {staff && staff.length === 0 && <p>No staff invited yet.</p>}
-      {staff && staff.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
-              <th style={{ padding: "6px 4px" }}>Email</th>
-              <th style={{ padding: "6px 4px" }}>Role</th>
-              <th style={{ padding: "6px 4px" }}>Status</th>
-              <th style={{ padding: "6px 4px" }}>Verified</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {staff.map((s) => (
-              <tr key={s.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                <td style={{ padding: "6px 4px" }}>{s.email}</td>
-                <td style={{ padding: "6px 4px" }}>{s.role}</td>
-                <td style={{ padding: "6px 4px" }}>{s.is_active ? "Active" : "Deactivated"}</td>
-                <td style={{ padding: "6px 4px" }}>{s.email_verified ? "Yes" : "Pending"}</td>
-                <td style={{ padding: "6px 4px" }}>
-                  <Button
-                    variant="ghost"
-                    disabled={setActive.isPending}
-                    onClick={() => setActive.mutate({ id: s.id, is_active: !s.is_active })}
-                  >
-                    {s.is_active ? "Deactivate" : "Reactivate"}
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
+        <Form {...form}>
+          <form
+            className="space-y-4"
+            onSubmit={form.handleSubmit((values) => invite.mutate(values))}
+          >
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      autoComplete="off"
+                      placeholder="teammate@company.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="agent">Agent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Admins manage settings and teammates. Agents handle conversations.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="submit" disabled={invite.isPending}>
+                {invite.isPending ? "Sending…" : "Send invitation"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }

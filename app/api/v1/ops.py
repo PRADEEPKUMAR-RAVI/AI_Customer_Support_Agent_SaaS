@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import require_platform_permission
 from app.api.errors import AppError
+from app.infra.db.models.metrics import TurnMetric
 from app.infra.db.models.outbox import Outbox
 from app.infra.db.models.tenant import Tenant
 from app.infra.db.session import platform_bypass
@@ -95,8 +96,45 @@ async def ops_health(
 
 @router.get("/usage", response_model=UsageResponse)
 async def ops_usage(
-    _principal: PlatformContext = Depends(require_platform_permission("ops:read")),
+    principal: PlatformContext = Depends(require_platform_permission("ops:read")),
 ) -> UsageResponse:
-    # Meant to aggregate person-2's M8 rollups (`turn_metric`), which doesn't exist yet — an
-    # honest "not available" here, never a fabricated number computed some other way.
-    return UsageResponse(status="unavailable", reason="Analytics (M8) is not available yet")
+    """Platform-wide usage across ALL tenants, aggregated from M8's ``turn_metric`` — read through
+    the audited BYPASSRLS ops connection so it legitimately spans tenants (the operator's job). One
+    row per tenant: conversation volume, turns, escalations, autonomous-resolution rate, and token
+    cost. Tenants with no activity appear with zeros so the operator sees the full roster."""
+    async with platform_bypass(
+        actor_admin_id=uuid.UUID(principal.actor_id), action="ops.usage"
+    ) as session:
+        tenants = (await session.execute(select(Tenant).order_by(Tenant.created_at))).scalars().all()
+        # BYPASSRLS → these turn_metric rows span every tenant. Aggregate per tenant_id in Python
+        # (POC volume); `cost` is a per-model JSONB list, so sum its cost_usd entries.
+        rows = (
+            await session.execute(
+                select(TurnMetric.tenant_id, TurnMetric.conversation_id,
+                       TurnMetric.escalated, TurnMetric.cost)
+            )
+        ).all()
+        agg: dict = {}
+        for tid, conv_id, escalated, cost in rows:
+            a = agg.setdefault(tid, {"convs": set(), "turns": 0, "esc": set(), "cost": 0.0})
+            a["convs"].add(conv_id)
+            a["turns"] += 1
+            if escalated:
+                a["esc"].add(conv_id)
+            for c in cost or []:
+                a["cost"] += float(c.get("cost_usd") or 0.0)
+        out: list[dict] = []
+        for t in tenants:
+            a = agg.get(t.id, {"convs": set(), "turns": 0, "esc": set(), "cost": 0.0})
+            convs, esc = len(a["convs"]), len(a["esc"])
+            out.append({
+                "tenant": t.name,
+                "industry": t.industry,
+                "status": t.status,
+                "conversations": convs,
+                "turns": a["turns"],
+                "escalations": esc,
+                "autonomous_resolution_rate": round((convs - esc) / convs, 3) if convs else 0.0,
+                "cost_usd": round(a["cost"], 4),
+            })
+        return UsageResponse(status="ok", tenants=out)

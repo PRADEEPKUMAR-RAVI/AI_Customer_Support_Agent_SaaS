@@ -56,9 +56,13 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
     )
 
 
-def _issue_tokens(response: Response, *, staff_id: str, tenant_id: str, email: str, role: str) -> TokenResponse:
+def _issue_tokens(
+    response: Response, *, staff_id: str, tenant_id: str, email: str, role: str, token_version: int
+) -> TokenResponse:
     settings = get_settings()
-    base = {"sub": staff_id, "tenant_id": tenant_id, "email": email, "role": role}
+    # ``ver`` binds the token to the staff row's token_version, so a password reset (which bumps
+    # the version) invalidates outstanding refresh tokens at their next /refresh.
+    base = {"sub": staff_id, "tenant_id": tenant_id, "email": email, "role": role, "ver": token_version}
     access = create_token({**base, "typ": "access"}, settings.access_token_ttl_seconds)
     refresh = create_token({**base, "typ": "refresh"}, settings.refresh_token_ttl_seconds)
     _set_refresh_cookie(response, refresh)
@@ -141,7 +145,7 @@ async def login(body: LoginRequest, response: Response) -> TokenResponse:
         raise AppError(status_code=403, title="Workspace unavailable", code="tenant_suspended")
     return _issue_tokens(
         response, staff_id=str(staff.id), tenant_id=str(staff.tenant_id),
-        email=staff.email, role=staff.role,
+        email=staff.email, role=staff.role, token_version=staff.token_version,
     )
 
 
@@ -157,9 +161,29 @@ async def refresh(request: Request, response: Response) -> TokenResponse:
                        code="invalid_token") from exc
     if claims.get("typ") != "refresh":
         raise AppError(status_code=401, title="Wrong token type", code="invalid_token")
+
+    # Re-validate against the DB — /refresh is a session-mint path, so staff deactivation, tenant
+    # suspension, role demotion, and password reset must all take effect here (never trust the
+    # 14-day cookie's stale claims). Role is sourced from the DB row so a demotion applies too.
+    async with auth_bootstrap_session() as session:
+        staff = (
+            await session.execute(select(Staff).where(Staff.id == claims["sub"]))
+        ).scalar_one_or_none()
+        tenant = None
+        if staff is not None:
+            tenant = (
+                await session.execute(select(Tenant).where(Tenant.id == staff.tenant_id))
+            ).scalar_one_or_none()
+    if staff is None or not staff.is_active:
+        raise AppError(status_code=401, title="Session is no longer valid", code="unauthenticated")
+    if tenant is None or tenant.status != "active":
+        raise AppError(status_code=403, title="Workspace unavailable", code="tenant_suspended")
+    if claims.get("ver") != staff.token_version:
+        raise AppError(status_code=401, title="Session expired, please sign in again",
+                       code="session_revoked")
     return _issue_tokens(
-        response, staff_id=claims["sub"], tenant_id=claims["tenant_id"],
-        email=claims["email"], role=claims.get("role", ""),
+        response, staff_id=str(staff.id), tenant_id=str(staff.tenant_id),
+        email=staff.email, role=staff.role, token_version=staff.token_version,
     )
 
 

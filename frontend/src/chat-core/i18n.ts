@@ -18,6 +18,9 @@ export function dirFor(lang: string): Dir {
 }
 
 export interface ChromeStrings {
+  assistantName: string;
+  assistantSubtitle: string;
+  suggestions: string[];
   placeholder: string;
   send: string;
   talkToHuman: string;
@@ -33,6 +36,9 @@ export interface ChromeStrings {
 }
 
 const EN: ChromeStrings = {
+  assistantName: "Assistant",
+  assistantSubtitle: "AI support · replies in seconds",
+  suggestions: ["What's your return policy?", "Where is my order?", "How do I contact a human?"],
   placeholder: "Type a message…",
   send: "Send",
   talkToHuman: "Talk to a human",
@@ -53,6 +59,9 @@ const EN: ChromeStrings = {
 };
 
 const ES: ChromeStrings = {
+  assistantName: "Asistente",
+  assistantSubtitle: "Soporte con IA · responde en segundos",
+  suggestions: ["¿Cuál es su política de devoluciones?", "¿Dónde está mi pedido?", "¿Cómo hablo con una persona?"],
   placeholder: "Escribe un mensaje…",
   send: "Enviar",
   talkToHuman: "Hablar con una persona",

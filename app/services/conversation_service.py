@@ -22,17 +22,17 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.core.config import estimate_cost_usd
-from app.domain.ticketing.states import TicketState
+from app.core.config import TenantDefaults, estimate_cost_usd
+from app.domain.escalation.reasons import EscalationReason
+from app.domain.ticketing.states import Actor, TicketState
 from app.infra.cache.redis import get_redis
 from app.infra.db.models.conversation import Conversation, Message
 from app.infra.db.models.tenant import AgentSettings, Tenant
 from app.infra.db.session import with_tenant
 from app.schemas.metrics import ModelCost, TurnMetricDTO
-from app.services import escalation_service, ticket_service
+from app.services import escalation_service, knowledge_service, tag_service, ticket_service
 from app.services.ai_engine import engine
 from app.services.analytics_service import record_turn_metric
-from app.services.ai_engine.guardrails import ALREADY_WITH_HUMAN
 from app.services.ai_engine.structured import clamp_tags
 from app.schemas.sse import (
     Citation,
@@ -149,9 +149,26 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     if contact_email and _looks_like_email(contact_email):
         ticket.contact_email = contact_email.strip()
 
-    # State gate ([IMP-TKT-1]): once a human owns it, the AI does NOT answer.
+    # [§4.2.2] Customer re-message on a resolved/closed ticket reopens the SAME conversation
+    # (within 72h → prior agent if it had one, else back to the AI). Done BEFORE the state gate
+    # so the resumed state (ai_handling / with_agent) is what the gate below then sees.
+    if ticket.state in (TicketState.RESOLVED.value, TicketState.CLOSED.value):
+        await ticket_service.reopen_ticket(
+            session, ticket_id=ticket.id, actor=Actor.CUSTOMER,
+            reopen_window_seconds=int(
+                cfg.get("reopen_window_seconds", TenantDefaults.REOPEN_WINDOW_SECONDS)
+            ),
+        )
+        await session.refresh(ticket)
+
+    # State gate ([IMP-TKT-1]): once a human owns it, the AI does NOT answer. Persist the
+    # customer's message (added above) so the agent sees it, and return a SILENT turn — NO AI
+    # reply. This previously injected "a human is handling this" on EVERY customer message, which
+    # cluttered the chat between the agent's real replies. The agent's replies reach the customer
+    # via the widget's live poll; the widget drops the (empty) assistant bubble for a silent turn.
     if ticket.state in (TicketState.ESCALATED.value, TicketState.WITH_AGENT.value):
-        return await _persist_canned(session, conv, ticket, client_msg_id, ALREADY_WITH_HUMAN)
+        await session.flush()
+        return [DoneEvent(turn_id="", ticket_state=ticket.state)]
 
     history = await _load_history(session, conv.id)
     # [A2] did the previous AI turn offer a human? A typed "yes" now becomes a proactive escalate.
@@ -180,11 +197,19 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     await ticket_service.start_ai_handling(session, ticket_id=ticket.id)
     answer_text = result.answer
     if result.escalate and result.escalation_reason is not None:
+        # [IMP-ESC-6] M2 produces the agent-facing hand-off context (why + KB sources used +
+        # grounding-gated suggested reply + linked-record ref); M6 stores it on the summary row.
+        summary_context = await _build_escalation_context(
+            session, cfg=cfg, user_text=user_text, reason=result.escalation_reason,
+            citations=result.citations, verified_record=result.verified_record,
+            turns=len(history) + 1,
+        )
         # Delegate the whole hand-off to M6: it does the ai_handling -> escalated CAS, sets
-        # priority [C4], writes the escalation-summary stub, and (after-hours) emits the single
-        # support-notify email — replacing P1's earlier inline block. M2 only supplies the reason.
+        # priority [C4], fills the escalation-summary row, and (after-hours) emits the single
+        # support-notify email — replacing P1's earlier inline block. M2 supplies reason + context.
         handoff = await escalation_service.escalate(
-            session, ticket_id=ticket.id, tenant_id=ctx.tenant_id, reason=result.escalation_reason
+            session, ticket_id=ticket.id, tenant_id=ctx.tenant_id,
+            reason=result.escalation_reason, summary_context=summary_context,
         )
         # After-hours (no agent available): surface M6's "leave your email — {SLA}" prompt to the
         # customer instead of the engine's generic hand-off line ([A15]/§4.5.1). The queued case
@@ -195,7 +220,22 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     # returned events below report the ticket's true post-transition state.
     await session.refresh(ticket)
 
+    # PRD §4.2: set the single nullable linked-record pointer AFTER a verified lookup (never a copy
+    # of the record's fields; a merely-mentioned/unverified id leaves it null). Refreshed object,
+    # so this mutation is flushed on commit.
+    if result.verified_record:
+        ticket.linked_record_type = result.verified_record.get("type")
+        ticket.linked_record_key = result.verified_record.get("key")
+
     tags = clamp_tags(result.tags_raw, cfg.get("allowed_tags", []))
+    # [§4.2.3] Persist the AI's tags to tag_def/ticket_tag so they actually land on the ticket
+    # (curated → approved; novel → pending, surfaced in the admin tray). Idempotent per
+    # (ticket, tag). Previously the tags were only echoed into structured_out and never applied.
+    _allowed_norm = [a.strip().lower() for a in cfg.get("allowed_tags", [])]
+    for _t in tags:
+        await tag_service.propose_tag(
+            session, ticket_id=ticket.id, name=_t.name, allowed_tags=_allowed_norm
+        )
     structured_out = {
         "answer_complete": result.answer_complete,
         "detected_language": result.detected_language,
@@ -234,16 +274,43 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
                          str(ai_msg.id), ticket.state)
 
 
-async def _persist_canned(session, conv, ticket, client_msg_id, text) -> list:
-    ai_msg = Message(conversation_id=conv.id, role="ai", content=text, client_msg_id=client_msg_id,
-                     structured_out={"answer_complete": False, "detected_language": conv.language or "en",
-                                     "tags": [], "retrieval_hits": 0, "escalate": False,
-                                     "escalation_reason": None, "advisory_confidence": None,
-                                     "citations": [], "offered_human": False})
-    session.add(ai_msg)
-    await session.flush()
-    return _build_events(["generating"], text, [],
-                         ai_msg.structured_out, str(ai_msg.id), ticket.state)
+# [IMP-ESC-6] Human-readable reason blurbs for the agent-facing escalation summary.
+_REASON_BLURB = {
+    EscalationReason.NO_GROUNDING: "the AI could not find a grounded answer in the knowledge base",
+    EscalationReason.EXPLICIT: "the customer asked to speak with a human",
+    EscalationReason.SENSITIVE: "the message matched a sensitive intent (dispute / complaint / legal / cancellation)",
+    EscalationReason.DISPUTE: "a record-state dispute was detected (void warranty / delivered-not-received / cancelled-refund)",
+    EscalationReason.N_FAILS: "identity verification failed the maximum number of times",
+    EscalationReason.PROACTIVE: "the customer accepted the offer to connect with a human",
+    EscalationReason.TIMEOUT: "the turn timed out or the engine could not complete it safely",
+}
+
+
+async def _build_escalation_context(
+    session, *, cfg: dict, user_text: str, reason: EscalationReason, citations: list,
+    verified_record: dict | None, turns: int,
+) -> dict:
+    """[IMP-ESC-6] The agent-facing hand-off packet stored on the escalation summary row:
+    why it escalated, the KB sources the AI used this turn, a grounding-gated suggested reply
+    (never an ungrounded guess), and the live linked-record ref. LLM-free, deterministic."""
+    suggestion = await knowledge_service.suggested_reply(
+        session, user_text, threshold=cfg.get("relevance_threshold")
+    )
+    blurb = _REASON_BLURB.get(reason, reason.value)
+    summary = (
+        f"Escalated because {blurb}. "
+        f'Customer\'s latest message: "{user_text[:400]}". '
+        f"Conversation length: ~{turns} message(s)."
+    )
+    linked_ref = None
+    if verified_record:
+        linked_ref = f"{verified_record.get('type')}:{verified_record.get('key')}"
+    return {
+        "summary": summary,
+        "kb_sources": citations or [],
+        "suggested_reply": suggestion.get("text") if suggestion else None,
+        "linked_record_ref": linked_ref,
+    }
 
 
 def _build_events(stages, answer, citations, structured_out, turn_id, ticket_state) -> list:

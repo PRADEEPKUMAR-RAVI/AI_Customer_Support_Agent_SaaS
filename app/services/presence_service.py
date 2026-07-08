@@ -42,13 +42,21 @@ async def is_tenant_available(session: AsyncSession, tenant_id) -> bool:
     """True iff ANY active staff member of this tenant currently holds a live presence key.
     Queries the tenant's (small) staff list rather than a Redis SCAN across keys — used by M6
     to decide queued-vs-after-hours."""
+    return bool(await available_agents(session, tenant_id))
+
+
+async def available_agents(session: AsyncSession, tenant_id) -> list[tuple[uuid.UUID, str]]:
+    """``(staff_id, email)`` for every ACTIVE staff member currently holding a live presence key
+    (i.e. toggled Available and heartbeating). Used by M6 to (a) decide queued-vs-after-hours and
+    (b) email each available agent that a ticket was escalated and is waiting to be claimed."""
     from app.infra.db.models.tenant import Staff  # lazy: avoid a cache<->db import cycle
 
-    staff_ids = (
-        await session.execute(select(Staff.id).where(Staff.is_active.is_(True)))
-    ).scalars().all()
+    rows = (
+        await session.execute(select(Staff.id, Staff.email).where(Staff.is_active.is_(True)))
+    ).all()
     redis = get_redis()
-    for staff_id in staff_ids:
+    out: list[tuple[uuid.UUID, str]] = []
+    for staff_id, email in rows:
         if await redis.exists(_key(tenant_id, staff_id)):
-            return True
-    return False
+            out.append((staff_id, email))
+    return out

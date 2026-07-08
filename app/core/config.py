@@ -36,9 +36,18 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    # Email is sent over SMTP (M9 outbox drain). Dev default = MailPit on localhost:1025 (no auth,
+    # no TLS — captures mail, sends nothing externally). To relay through a real transactional
+    # provider, set user/password + starttls: the SAME code path authenticates over STARTTLS on
+    # port 587. Recommended = Brevo (smtp-relay.brevo.com, 300/day free, single-sender verify, no
+    # domain/DNS needed); Resend (smtp.resend.com, user="resend", password=API key) is identical
+    # but requires a verified sending domain. See .env.example.
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_from: str = "no-reply@cs-agent.local"
+    smtp_user: str = ""          # empty → no SMTP AUTH (the MailPit dev path)
+    smtp_password: str = ""
+    smtp_starttls: bool = False  # True for a provider relay on port 587; False for dev MailPit
 
     jwt_secret: str = "dev-insecure-change-me-32-bytes-minimum-secret"
     jwt_algorithm: str = "HS256"
@@ -54,11 +63,20 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str = ""
     embeddings_provider: Literal["bge_onnx", "cohere"] = "bge_onnx"
-    # fastembed lacks BGE-M3; use the closest self-hosted 1024-dim multilingual pair (both ONNX,
-    # commercial-safe). embed_dim must stay 1024 to match the kb_chunk.embedding column.
-    embed_model: str = "intfloat/multilingual-e5-large"
-    rerank_model: str = "BAAI/bge-reranker-base"
-    embed_dim: int = 1024
+    # Self-hosted multilingual pair via fastembed/ONNX (no key). Default embedder is the LIGHT
+    # multilingual model (~0.22GB, 384-dim) so it loads/runs fast on a dev CPU — the 2GB e5-large
+    # took minutes to cold-load. The reranker is jina-reranker-v2-multilingual: bge-reranker-base
+    # is NOT reliably multilingual (empirically it scores relevant Spanish queries ~0, failing the
+    # grounding gate), whereas jina-v2 grounds consistently across EN/ES/FR/DE/HI. The grounding
+    # gate depends on the reranker's scores, which BgeOnnxClient sigmoid-normalises to [0,1] so one
+    # threshold works for fake + real. The reranker is warmed at API startup so its load never
+    # lands on a customer turn. embed_dim MUST match the embed model's output dim — it drives the
+    # kb_chunk.embedding pgvector column, so changing the model means changing dim + reseeding.
+    # LICENSE NOTE: jina-reranker-v2 is CC-BY-NC (non-commercial). For a commercial launch, swap to
+    # a commercial-safe multilingual reranker (e.g. BAAI/bge-reranker-v2-m3 via add_custom_model).
+    embed_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    rerank_model: str = "jinaai/jina-reranker-v2-base-multilingual"
+    embed_dim: int = 384
     # Where fastembed caches the ONNX weights. Pinned to a persistent path in the Docker image so
     # the model is baked into an image layer (no per-machine download). None -> fastembed default.
     embed_cache_dir: str | None = None

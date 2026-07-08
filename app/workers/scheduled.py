@@ -16,7 +16,7 @@ import asyncio
 from sqlalchemy import select
 
 from app.core.config import TenantDefaults
-from app.infra.db.engine import SessionLocal
+from app.infra.db.engine import WorkerSessionLocal
 from app.infra.db.models.tenant import AgentSettings, Tenant
 from app.infra.db.session import with_tenant
 from app.infra.queue.celery_app import celery_app
@@ -46,7 +46,7 @@ async def _sweep_tenant(tenant_id) -> None:
 
 
 async def _sweep_all_tenants() -> None:
-    async with SessionLocal() as session:
+    async with WorkerSessionLocal() as session:
         tenant_ids = (
             await session.execute(select(Tenant.id).where(Tenant.status == "active"))
         ).scalars().all()

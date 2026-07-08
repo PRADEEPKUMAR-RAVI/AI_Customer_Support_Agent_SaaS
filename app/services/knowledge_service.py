@@ -247,10 +247,15 @@ async def delete_source(session, *, source_id: uuid.UUID) -> None:
 # Provisional dev default used ONLY when the tenant's eval-derived threshold is not yet
 # calibrated ([IMP-DEL-5]). agent_settings.relevance_threshold overrides it once set.
 #
-# Calibration (eval corpus, top-1 rerank score): FakeReranker (lexical 0..1) -> on-topic ~0.75,
-# off-topic 0.0. Real BAAI/bge-reranker-base (logits) -> on-topic ~6.0-6.9, off-topic negative.
-# 0.15 sits safely in the gap for BOTH providers on the eval set; real deployments should set a
-# per-tenant relevance_threshold nearer ~1.5 (bge-reranker-base) for margin against borderline hits.
+# Calibration (top-1 rerank score, both providers on a common 0..1 scale):
+#   * FakeReranker (lexical overlap) -> on-topic ~0.75, off-topic 0.0.
+#   * Real BAAI/bge-reranker-base -> the ONNX cross-encoder emits an unbounded LOGIT, which
+#     BgeOnnxClient.rerank squashes through a sigmoid to 0..1. Measured: on-topic ~0.45-0.99
+#     (a bare-relevant query can be as low as ~0.45), off-topic ~0.001. (NB: the raw logit for a
+#     genuinely relevant hit can sit just below 0 — thresholding the raw logit would wrongly
+#     reject real answers, which is why the client normalises with sigmoid.)
+# 0.15 sits in the gap for BOTH providers with comfortable margin. A tenant may raise its
+# relevance_threshold toward ~0.5 for stricter grounding.
 PROVISIONAL_THRESHOLD = 0.15
 
 NO_GROUNDING = "NO_GROUNDING"

@@ -15,6 +15,8 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
     "types": ["node", "vite/client", "vitest/globals"]
   },
   "include": ["src", "vite.config.ts", "widget"]

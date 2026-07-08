@@ -106,8 +106,14 @@ async def test_ops_health_counts_dead_and_retrying_outbox_rows():
         assert body["recent_send_failures"] >= 1
 
 
-async def test_ops_usage_is_an_honest_stub():
+async def test_ops_usage_aggregates_across_tenants():
+    """Usage is now wired: it aggregates turn_metric across ALL tenants via the BYPASSRLS ops
+    connection, returning one row per tenant with the platform-usage shape."""
     async with client() as c:
         res = await c.get("/api/v1/ops/usage", headers=_platform_headers())
         assert res.status_code == 200, res.text
-        assert res.json()["status"] == "unavailable"
+        body = res.json()
+        assert body["status"] == "ok"
+        assert isinstance(body["tenants"], list)
+        for row in body["tenants"]:
+            assert {"tenant", "conversations", "turns", "escalations", "cost_usd"} <= set(row)

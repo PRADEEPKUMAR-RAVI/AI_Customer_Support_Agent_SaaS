@@ -13,9 +13,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from sqlalchemy import update
+
 from app.api.errors import AppError
 from app.core.security import decode_token
 from app.infra.db.models.conversation import Conversation, Message
+from app.infra.db.models.metrics import TurnMetric
 from app.infra.db.session import with_tenant
 from app.services.conversation_service import WidgetCtx, handle_message
 
@@ -83,10 +86,15 @@ async def post_feedback(
         ).scalar_one_or_none()
         if msg is None or msg.role != "ai":
             raise AppError(status_code=404, title="Message not found", code="not_found")
-        # POC: store thumbs on the message. person-2 moves this to a dedicated feedback table (CSAT).
+        # Keep the thumbs on the message for the transcript view...
         so = dict(msg.structured_out or {})
         so["feedback"] = body.rating
         msg.structured_out = so
+        # ...AND record it on the typed turn_metric row so §5.6 CSAT analytics can read it (M8
+        # reads turn_metric, never message.structured_out). Idempotent: re-rating overwrites.
+        await session.execute(
+            update(TurnMetric).where(TurnMetric.message_id == message_id).values(csat=body.rating)
+        )
     return {"status": "recorded"}
 
 

@@ -191,6 +191,44 @@ async def update_staff(
     return _to_staff_response(row)
 
 
+@router.post("/staff/{staff_id}/resend-invite", response_model=StaffResponse)
+async def resend_staff_invite(
+    staff_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    staff: StaffContext = Depends(require_permission("staff:manage")),
+) -> StaffResponse:
+    """Re-issue a fresh invite email for a teammate who hasn't accepted yet (their link expired or
+    was lost). Mints a NEW invite token (valid ``_STAFF_INVITE_TTL_SECONDS``) and enqueues the
+    email with a UNIQUE dedupe key so it actually re-sends instead of being deduped against the
+    original invite. Rejected once the teammate has accepted (``email_verified``) — for a forgotten
+    password after acceptance they'd use the forgot-password flow instead."""
+    row = (await session.execute(select(Staff).where(Staff.id == staff_id))).scalar_one_or_none()
+    if row is None:
+        raise AppError(status_code=404, title="Staff not found", code="staff_not_found")
+    if row.email_verified:
+        raise AppError(status_code=400, title="This teammate has already accepted their invite",
+                       code="already_accepted")
+    invite_token = create_token(
+        {
+            "typ": "invite",
+            "sub": str(row.id),
+            "tenant_id": staff.tenant_id,
+            "email": row.email,
+            "ver": row.token_version,
+        },
+        _STAFF_INVITE_TTL_SECONDS,
+    )
+    await emit(
+        session,
+        event_type="email.staff_invite",
+        payload={"to": row.email, "token": invite_token, "role": row.role},
+        # Fresh dedupe key per resend — a resend is intentionally a NEW email, so it must NOT be
+        # deduped (in email_log) against the original invite or an earlier resend.
+        dedupe_key=f"staff_invite:{row.id}:{uuid.uuid4().hex}",
+    )
+    return _to_staff_response(row)
+
+
 # --- widget key + embed snippet ----------------------------------------------------------------
 
 

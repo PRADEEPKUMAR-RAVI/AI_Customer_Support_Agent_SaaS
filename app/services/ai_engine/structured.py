@@ -20,6 +20,17 @@ class TurnMetadata(BaseModel):
     answer_complete: bool = False
     detected_language: str = "en"          # BCP-47
     tags: list[str] = Field(default_factory=list)   # RAW model-proposed names (pre-clamp)
+    # Model CLASSIFICATION of the turn (never trusted for the answer TEXT, only to pick a
+    # deterministic, code-owned reply on a non-grounded turn — see engine._conversational_reply):
+    #   answer        — answering from tool results (grounding gate governs the text)
+    #   needs_info    — asking the customer for a record-lookup key/verify value (slot-filling)
+    #   smalltalk     — greeting / thanks / social
+    #   capability    — "what can you do?" / "what is your work?"
+    #   out_of_scope  — unrelated to this business's domain
+    #   human_request — the customer explicitly asks to talk to / connect with a human/agent
+    #                   (typed, not the widget button) → the engine escalates (EXPLICIT)
+    turn_type: str = "answer"
+    record_type: str | None = None         # for turn_type=needs_info: which record the customer wants
     retrieval_hits: int = 0                # engine-owned
     escalate: bool = False                 # engine-owned
     escalation_reason: EscalationReason | None = None  # engine-owned
@@ -36,9 +47,17 @@ TURN_METADATA_SCHEMA: dict = {
         "answer_complete": {"type": "boolean"},
         "detected_language": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
+        "turn_type": {
+            "type": "string",
+            "enum": ["answer", "needs_info", "smalltalk", "capability", "out_of_scope", "human_request"],
+        },
+        "record_type": {"type": ["string", "null"]},
         "advisory_confidence": {"type": ["number", "null"]},
     },
-    "required": ["answer_complete", "detected_language", "tags", "advisory_confidence"],
+    "required": [
+        "answer_complete", "detected_language", "tags", "turn_type", "record_type",
+        "advisory_confidence",
+    ],
 }
 
 

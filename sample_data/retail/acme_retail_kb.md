@@ -83,6 +83,33 @@ To make a warranty claim you need the product **serial number** (found on the bo
 or the device) or the original **order number**. The warranty does not cover
 accidental damage, normal wear, or consumable parts such as batteries and filters.
 
+### How to file a warranty claim
+
+1. Have your **serial number** or **order number** and the **email** on the order ready.
+2. Ask the support assistant to check your coverage, or open **Order History → Warranty**.
+3. If your coverage is **active**, describe the defect. For a manufacturing defect we
+   arrange a free repair or a replacement of the same model.
+4. If a photo of the defect or the receipt is needed, our team will email you a secure
+   upload link — the chat itself does not accept file uploads.
+5. Repairs take **7–10 business days** from when we receive the item; replacements ship
+   within **2 business days** of approval.
+
+If your coverage is **void** or **expired**, a claim cannot be auto-approved — the
+assistant will connect you with a specialist who can review options such as a paid repair.
+
+---
+
+## Order Changes & Cancellations
+
+You can change the shipping address or cancel an order **while it is still `placed` or
+`processing`**. Once an order is `shipped` it can no longer be changed or cancelled —
+you would return it after delivery instead.
+
+- To cancel, open **Order History → Cancel Order**, or ask the assistant.
+- A cancellation reverses the payment authorization within **3–5 business days**.
+- If an order is already `cancelled`, any charge has been reversed automatically; refunds
+  to a card appear within **5–7 business days**.
+
 ---
 
 ## Payments

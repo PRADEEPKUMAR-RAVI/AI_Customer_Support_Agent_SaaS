@@ -27,7 +27,11 @@ from app.services.ai_engine.guardrails import (
     KB_NOT_READY_MSG,
     PROACTIVE_OFFER,
     VERIFY_LOCKED,
+    capability_reply,
     delimit_tool_result,
+    out_of_scope_reply,
+    slot_fill_prompt,
+    smalltalk_reply,
 )
 from app.services.ai_engine.prompts import build_system_prompt
 from app.services.ai_engine.structured import TURN_METADATA_SCHEMA, TurnMetadata
@@ -53,6 +57,9 @@ class TurnResult:
     completion_tokens: int = 0
     model: str = ""
     offered_human: bool = False  # [A2] this turn offered a human — persisted so the next turn knows
+    # PRD §4.2: the verified-lookup identity {type, key} for the ticket's linked-record pointer.
+    # Set ONLY when lookup_record returned status=ok this turn (a verified match); else None.
+    verified_record: dict | None = None
 
 
 class _Stalled(Exception):
@@ -70,6 +77,24 @@ _AFFIRMATIVE = {
 def _is_affirmative(text: str) -> bool:
     t = (text or "").strip().lower().rstrip("!. ")
     return t in _AFFIRMATIVE or t.startswith("yes")
+
+
+# Turn types where the ENGINE owns the reply text (a deterministic, code-built message) rather
+# than the model — so on a non-grounded turn no model-authored prose (which could fabricate a
+# fact) ever reaches the customer. The model only CLASSIFIES the turn; the code writes the words.
+_CONVERSATIONAL_TYPES = {"needs_info", "smalltalk", "capability", "out_of_scope"}
+
+
+def _conversational_reply(turn_type: str, cfg: dict, industry: str, meta) -> str:
+    if turn_type == "needs_info":
+        return slot_fill_prompt(industry, meta.record_type)
+    if turn_type == "smalltalk":
+        return smalltalk_reply(cfg)
+    if turn_type == "capability":
+        return capability_reply(industry)
+    if turn_type == "out_of_scope":
+        return out_of_scope_reply(industry)
+    return PROACTIVE_OFFER  # defensive fallback (never expected)
 
 
 def _dedup(seq: list[str]) -> list[str]:
@@ -132,13 +157,14 @@ async def run_turn(
         )
 
     llm = get_llm()
-    messages: list[dict] = [{"role": "system", "content": build_system_prompt(cfg)}]
+    messages: list[dict] = [{"role": "system", "content": build_system_prompt(cfg, industry=industry)}]
     messages += history or []
     messages.append({"role": "user", "content": user_text})
 
     grounded = None
     kb_signal: str | None = None
     record_result: dict | None = None
+    verified_record: dict | None = None  # PRD §4.2 linked-record pointer, set on a verified lookup
     model_escalate: dict | None = None
     tool_calls = 0
     stages: list[str] = []
@@ -195,6 +221,14 @@ async def run_turn(
                             session, tc.arguments, industry=industry,
                             tenant_id=tenant_id, user_text=user_text,
                         )
+                        # PRD §4.2: capture the verified identity for the ticket's linked-record
+                        # pointer — set ONLY on a verified match (status=ok), never on
+                        # not_found/unverified/rate_limited (a merely-mentioned id leaves it null).
+                        if record_result.get("status") == LookupStatus.OK.value:
+                            verified_record = {
+                                "type": tc.arguments.get("record_type"),
+                                "key": str(tc.arguments.get("key", "")),
+                            }
                         payload = record_result
                     elif tc.name == "escalate":
                         model_escalate = escalate_tool(tc.arguments)
@@ -242,6 +276,22 @@ async def run_turn(
     grounded_answer = isinstance(grounded, GroundedResult) and bool(grounded.chunks)
     offered_human = False
 
+    # [§4.5] deterministic sensitive-intent trigger — the tenant's configured keyword list
+    # (refund dispute / complaint / legal / cancellation / …). A hard hand-off regardless of
+    # grounding; matched here in code, not left to the model. A record-state DISPUTE (more
+    # specific) still overrides this below; an explicit human request was handled up top.
+    sensitive_terms = [k.strip().lower() for k in (cfg.get("sensitive_intent_list") or []) if k.strip()]
+    if sensitive_terms and any(term in user_text.lower() for term in sensitive_terms):
+        escalate, reason, answer_text = True, EscalationReason.SENSITIVE, HUMAN_TAKING_OVER
+
+    # [§4.5] Customer explicitly asked IN TEXT to reach a human ("connect me with a human", "talk
+    # to an agent", …) — the same deterministic hand-off as the widget's talk-to-human button, so
+    # the AI can't just *say* it connected them without the ticket actually escalating. Guarded so
+    # a more-specific reason (dispute/sensitive set above) still dominates; otherwise this beats
+    # no-grounding / the proactive offer.
+    if model_meta.turn_type == "human_request" and reason in (None, EscalationReason.NO_GROUNDING):
+        escalate, reason, answer_text = True, EscalationReason.EXPLICIT, HUMAN_TAKING_OVER
+
     # A model-requested hand-off is a soft (sensitive) escalate; the engine still owns the action.
     if model_escalate and not escalate:
         escalate, reason = True, EscalationReason.SENSITIVE
@@ -268,6 +318,25 @@ async def run_turn(
     # connects them (reason=proactive); otherwise the (still-ungrounded) turn hands off as usual.
     if human_offer_pending and _is_affirmative(user_text) and reason in (None, EscalationReason.NO_GROUNDING):
         escalate, reason, answer_text = True, EscalationReason.PROACTIVE, HUMAN_TAKING_OVER
+    elif reason is EscalationReason.NO_GROUNDING and model_meta.turn_type in _CONVERSATIONAL_TYPES:
+        # [§4.8 / scope] Not a grounded factual ANSWER — the model classified it as record
+        # slot-filling, small talk, a capability/self question, or out-of-scope.
+        #   * SLOT-FILLING (needs_info): ship a DETERMINISTIC, schema-derived prompt — NEVER model
+        #     free text. This is the highest fabrication-risk path (the safety review showed the
+        #     model can smuggle a fake order/ETA into a "question"), so the code owns the words.
+        #   * SMALL TALK / CAPABILITY / OUT-OF-SCOPE: relay the model's NATURAL reply so it doesn't
+        #     sound robotic. These assert no business facts; the system prompt forbids stating any
+        #     un-retrieved policy/price/timeframe/record detail on ANY turn, and the grounding gate
+        #     still governs real factual questions (turn_type='answer' → decline if ungrounded).
+        # dispute/sensitive/explicit/rate-limit/timeout already claimed a higher-priority reason
+        # above (guard: reason is NO_GROUNDING). The talk-to-human button is always available.
+        escalate, reason = False, None
+        if model_meta.turn_type == "needs_info":
+            answer_text = slot_fill_prompt(industry, model_meta.record_type)
+        else:
+            answer_text = model_answer.strip() or _conversational_reply(
+                model_meta.turn_type, cfg, industry, model_meta
+            )
     elif (not human_offer_pending) and escalate and reason is EscalationReason.NO_GROUNDING:
         escalate, reason, answer_text, offered_human = False, None, PROACTIVE_OFFER, True
     # KB-not-ready is already a soft offer — mark it so a following "yes" is recognised as acceptance.
@@ -296,4 +365,5 @@ async def run_turn(
         completion_tokens=c_tok,
         model=model_name,
         offered_human=offered_human,
+        verified_record=verified_record,
     )

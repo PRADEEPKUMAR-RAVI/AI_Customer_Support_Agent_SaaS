@@ -12,7 +12,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.domain.escalation.reasons import EscalationReason
-from app.services.ai_engine.guardrails import KB_NOT_READY_MSG, NO_CONFIDENT_ANSWER
+from app.services.ai_engine.guardrails import (
+    KB_NOT_READY_MSG,
+    NO_CONFIDENT_ANSWER,
+    render_record_answer,
+)
 from app.services.knowledge_service import KB_NOT_READY, GroundedResult
 
 
@@ -36,8 +40,13 @@ def decide_outcome(*, grounded, kb_signal, model_answer: str, record_result: dic
                        retrieval_hits=len(grounded.chunks), citations=grounded.citations)
 
     if record_result and record_result.get("status") == "ok":
-        return Outcome(answer=f"Here are your details: {record_result.get('record')}",
-                       escalate=False, reason=None, retrieval_hits=0)
+        # Prefer the model's natural phrasing (grounded in the verified record in its context, in
+        # the customer's language, per §4.8); fall back to a deterministic per-state rendering when
+        # the model produced nothing (e.g. the fake). Never dump the raw record dict.
+        answer = model_answer.strip() or render_record_answer(
+            record_result.get("record_type", ""), record_result.get("record") or {}
+        )
+        return Outcome(answer=answer, escalate=False, reason=None, retrieval_hits=0)
 
     if kb_signal == KB_NOT_READY:
         return Outcome(answer=KB_NOT_READY_MSG, escalate=False, reason=None, retrieval_hits=0)

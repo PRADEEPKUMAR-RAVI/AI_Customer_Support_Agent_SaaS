@@ -110,5 +110,5 @@ async def lookup_record_tool(
     for opt_field in schema.optional_fields:
         if opt_field in raw:
             record[opt_field] = raw.get(opt_field)
-    return {"status": LookupStatus.OK.value, "record": record,
+    return {"status": LookupStatus.OK.value, "record": record, "record_type": record_type,
             "dispute": detect_dispute(record_type, record, user_text)}

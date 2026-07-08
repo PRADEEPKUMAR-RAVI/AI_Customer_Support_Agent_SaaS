@@ -16,6 +16,12 @@ interface WidgetConfig {
 }
 
 const Z = "2147483000"; // above almost everything, below the max (leave room for tenant modals)
+const BRAND = "#4f46e5"; // indigo-600 (matches the design system's primary)
+
+const ICON_CHAT =
+  '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+const ICON_CLOSE =
+  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 
 function readConfig(): WidgetConfig {
   const el = document.querySelector<HTMLScriptElement>("script[data-widget-key]");
@@ -30,8 +36,8 @@ function createHost(): HTMLElement {
   Object.assign(host.style, {
     position: "fixed", right: "20px", bottom: "88px", width: "380px", height: "560px",
     maxWidth: "calc(100vw - 40px)", maxHeight: "calc(100vh - 120px)", zIndex: Z,
-    borderRadius: "12px", overflow: "hidden", boxShadow: "0 12px 32px rgba(0,0,0,0.25)",
-    background: "#fff", display: "none",
+    borderRadius: "16px", overflow: "hidden", boxShadow: "0 12px 40px rgba(2,6,23,0.28)",
+    border: "1px solid rgba(2,6,23,0.08)", background: "transparent", display: "none",
   });
   host.attachShadow({ mode: "open" });
   document.body.appendChild(host);
@@ -43,19 +49,23 @@ function boot(): void {
   if (!cfg.widgetKey) return; // nothing to do without a key
 
   const bubble = document.createElement("button");
-  bubble.textContent = "💬";
+  bubble.innerHTML = ICON_CHAT;
   bubble.setAttribute("aria-label", "Open chat");
   Object.assign(bubble.style, {
     position: "fixed", right: "20px", bottom: "20px", width: "56px", height: "56px",
-    borderRadius: "50%", border: "none", background: "#2563eb", color: "#fff", fontSize: "24px",
-    cursor: "pointer", zIndex: Z, boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+    display: "grid", placeItems: "center", borderRadius: "50%", border: "none",
+    background: BRAND, color: "#fff", cursor: "pointer", zIndex: Z,
+    boxShadow: "0 6px 20px rgba(79,70,229,0.45)", transition: "transform .15s ease",
   });
+  bubble.addEventListener("mouseenter", () => (bubble.style.transform = "scale(1.06)"));
+  bubble.addEventListener("mouseleave", () => (bubble.style.transform = "scale(1)"));
 
   let host: HTMLElement | null = null;
   let open = false;
 
   bubble.addEventListener("click", async () => {
     open = !open;
+    bubble.innerHTML = open ? ICON_CLOSE : ICON_CHAT;
     bubble.setAttribute("aria-label", open ? "Close chat" : "Open chat");
     if (open && !host) {
       host = createHost();

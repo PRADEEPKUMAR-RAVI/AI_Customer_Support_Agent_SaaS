@@ -1,0 +1,8 @@
+serial_no,order_id,email,coverage,expiry
+SN-1001-A,1001,jane.doe@example.com,active,2027-07-08
+SN-1003-C,1003,li.wei@example.com,expired,2025-01-01
+SN-1006-E,1006,emma.brown@example.com,void,2026-12-31
+SN-1009-I,1009,liam.miller@example.com,active,2027-03-15
+SN-1010-K,1010,ava.davis@example.com,active,2028-01-20
+SN-1014-O,1014,charlotte.lee@example.com,expired,2024-11-30
+SN-1007-G,1007,noah.wilson@example.com,void,2026-05-05

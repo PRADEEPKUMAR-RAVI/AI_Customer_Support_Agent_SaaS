@@ -28,7 +28,16 @@ class CostStats(BaseModel):
 
 
 class TagStats(BaseModel):
-    """Deferred: real tag counts need M5's ``ticket_tag`` (P3). Empty until that lands."""
+    """Top tags/intents — live windowed counts over ``ticket_tag`` (name → count)."""
 
     tags: dict[str, int] = Field(default_factory=dict)
     note: str | None = None
+
+
+class CsatStats(BaseModel):
+    """Thumbs up/down CSAT (§5.6). ``score`` = up / (up + down), or None when nothing is rated."""
+
+    up: int = 0
+    down: int = 0
+    rated: int = 0
+    score: float | None = None

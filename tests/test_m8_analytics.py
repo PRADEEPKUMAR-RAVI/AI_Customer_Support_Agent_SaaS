@@ -87,8 +87,42 @@ async def test_empty_window_returns_zeros_not_errors():
     assert c.total_cost_usd == 0.0 and c.cost_per_conversation == 0.0
 
 
-async def test_tags_stub_is_empty_pending_m5():
+async def test_tags_counts_from_ticket_tag():
+    """§4.2.3: analytics now counts real ticket_tag rows (the AI-turn wiring persists them)."""
+    from app.infra.db.models.conversation import Conversation
+    from app.services import tag_service, ticket_service
+
     tenant = await make_tenant("m8-tags", industry="retail")
     async with with_tenant(tenant) as session:
+        conv = Conversation(session_id="s-m8-tags")
+        session.add(conv)
+        await session.flush()
+        ticket = await ticket_service.get_or_create_ticket(session, conversation_id=conv.id)
+        await tag_service.propose_tag(session, ticket_id=ticket.id, name="order_status",
+                                      allowed_tags=["order_status"])
+        await tag_service.propose_tag(session, ticket_id=ticket.id, name="billing_issue",
+                                      allowed_tags=["order_status"])
+        # Idempotent: re-proposing the same tag must not double-count.
+        await tag_service.propose_tag(session, ticket_id=ticket.id, name="order_status",
+                                      allowed_tags=["order_status"])
+    async with with_tenant(tenant) as session:
         t = await analytics_service.tags(session)
-    assert t.tags == {} and t.note
+    assert t.tags == {"order_status": 1, "billing_issue": 1}
+    assert t.note is None  # the stale "pending M5" note is gone
+
+
+async def test_csat_score_from_turn_metric():
+    """§5.6: thumbs up/down CSAT aggregated from turn_metric.csat."""
+    import uuid as _uuid
+
+    from app.infra.db.models.metrics import TurnMetric
+
+    tenant = await make_tenant("m8-csat", industry="retail")
+    conv = _uuid.uuid4()
+    async with with_tenant(tenant) as session:
+        for rating in ("up", "up", "down", None):  # None = unrated, excluded from the score
+            session.add(TurnMetric(conversation_id=conv, csat=rating))
+    async with with_tenant(tenant) as session:
+        c = await analytics_service.csat(session)
+    assert c.up == 2 and c.down == 1 and c.rated == 3
+    assert c.score == pytest.approx(2 / 3, abs=1e-3)

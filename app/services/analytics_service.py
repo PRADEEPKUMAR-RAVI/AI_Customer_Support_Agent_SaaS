@@ -14,7 +14,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.infra.db.models.metrics import TurnMetric
-from app.schemas.analytics import AnalyticsOverview, CostStats, LatencyStats, TagStats
+from app.infra.db.models.tag import TagDef, TicketTag
+from app.schemas.analytics import AnalyticsOverview, CostStats, CsatStats, LatencyStats, TagStats
 from app.schemas.metrics import TurnMetricDTO
 
 
@@ -129,5 +130,38 @@ async def cost(session, *, since=None, until=None) -> CostStats:
 
 
 async def tags(session, *, since=None, until=None) -> TagStats:
-    # Real tag counts need M5's ticket_tag (P3). Empty until that table lands.
-    return TagStats(tags={}, note="Tag analytics pending M5 (ticket_tag).")
+    """Top tags/intents — live windowed count over ``ticket_tag`` joined to ``tag_def`` (RLS
+    scopes to the tenant). Rejected tags have their ticket_tag rows deleted, so only
+    approved/pending tags are counted (§4.2.3)."""
+    conds = []
+    if since is not None:
+        conds.append(TicketTag.created_at >= since)
+    if until is not None:
+        conds.append(TicketTag.created_at <= until)
+    rows = (
+        await session.execute(
+            select(TagDef.name, func.count())
+            .join(TicketTag, TicketTag.tag_def_id == TagDef.id)
+            .where(*conds)
+            .group_by(TagDef.name)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    return TagStats(tags={name: count for name, count in rows})
+
+
+async def csat(session, *, since=None, until=None) -> CsatStats:
+    """Thumbs up/down CSAT over ``turn_metric.csat`` (§5.6). Score = up / (up + down)."""
+    w = _window(since, until)
+    rows = (
+        await session.execute(
+            select(TurnMetric.csat, func.count())
+            .where(TurnMetric.csat.isnot(None), *w)
+            .group_by(TurnMetric.csat)
+        )
+    ).all()
+    counts = {value: count for value, count in rows}
+    up = counts.get("up", 0)
+    down = counts.get("down", 0)
+    rated = up + down
+    return CsatStats(up=up, down=down, rated=rated, score=(up / rated) if rated else None)

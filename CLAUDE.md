@@ -163,7 +163,9 @@ Workspace + M10 ops + their UIs.
 - **Embeddings + rerank:** **self-hosted BGE via ONNX by default** — `BAAI/bge-m3` (embed, 1024-d)
   + `BAAI/bge-reranker-v2-m3` (rerank), no key, no cloud, MIT-licensed. Cohere = optional swap.
 - **Infra:** Redis (cache/idempotency/broker/pubsub), Celery (2 queues: `interactive`/`batch`),
-  SMTP (MailHog in dev), Docker Compose. **No cloud services** except the LLM API.
+  SMTP (MailPit in dev; a transactional-provider SMTP relay — **Brevo** recommended, Resend
+  alt — in prod via the `SMTP_*` env, STARTTLS on 587), Docker Compose. **No cloud services in
+  dev** except the LLM API.
 - **Frontend:** React 18 + TS SPA (typed client generated from OpenAPI) + Preact/Shadow-DOM widget.
 
 **Offline-first:** `USE_FAKE_LLM` / `USE_FAKE_EMBEDDINGS` default to `true`, so the whole stack runs

@@ -39,11 +39,16 @@ export function applyEvent(state: ChatState, ev: SSEEvent): ChatState {
       );
     case "error":
       return { ...state, error: ev.message, conn: "error", status: null };
-    case "done":
-      return patchLastAssistant(
-        { ...state, ticketState: ev.ticket_state, status: null, conn: "idle" },
-        (m) => ({ ...m, id: ev.turn_id || m.id, streaming: false }),
-      );
+    case "done": {
+      const closed: ChatState = { ...state, ticketState: ev.ticket_state, status: null, conn: "idle" };
+      const last = closed.messages[closed.messages.length - 1];
+      // Silent turn (e.g. a human is now handling the conversation): no AI content arrived, so
+      // drop the empty assistant placeholder rather than leave a blank bubble.
+      if (last && last.role === "assistant" && !last.content && last.citations.length === 0) {
+        return { ...closed, messages: closed.messages.slice(0, -1) };
+      }
+      return patchLastAssistant(closed, (m) => ({ ...m, id: ev.turn_id || m.id, streaming: false }));
+    }
     default:
       return state;
   }

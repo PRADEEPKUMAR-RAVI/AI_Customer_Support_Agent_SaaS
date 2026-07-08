@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_permission
-from app.schemas.analytics import AnalyticsOverview, CostStats, LatencyStats, TagStats
+from app.schemas.analytics import AnalyticsOverview, CostStats, CsatStats, LatencyStats, TagStats
 from app.services import analytics_service
 
 router = APIRouter(
@@ -56,3 +56,12 @@ async def tags(
     session: AsyncSession = Depends(get_db),
 ) -> TagStats:
     return await analytics_service.tags(session, since=from_date, until=to_date)
+
+
+@router.get("/csat", response_model=CsatStats)
+async def csat(
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    session: AsyncSession = Depends(get_db),
+) -> CsatStats:
+    return await analytics_service.csat(session, since=from_date, until=to_date)

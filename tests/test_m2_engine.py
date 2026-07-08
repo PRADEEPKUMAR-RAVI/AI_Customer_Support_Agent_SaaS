@@ -10,11 +10,11 @@ from app.core import ratelimit
 from app.core.config import estimate_cost_usd
 from app.domain.escalation.reasons import EscalationReason
 from app.infra.connectors.base import NOT_FOUND, ConnectorError
-from app.infra.llm.base import LLMResult
+from app.infra.llm.base import LLMResult, ToolCall
 from app.schemas.metrics import ModelCost, TurnMetricDTO
 from app.services.ai_engine.engine import run_turn
 from app.services.ai_engine.grounding import decide_outcome
-from app.services.ai_engine.guardrails import PROACTIVE_OFFER
+from app.services.ai_engine.guardrails import PROACTIVE_OFFER, render_record_answer
 from app.services.ai_engine.structured import clamp_tags
 from app.services.ai_engine.tools.lookup_record import detect_dispute, lookup_record_tool
 from app.services.knowledge_service import KB_NOT_READY, GroundedResult
@@ -54,6 +54,30 @@ def test_decide_outcome_no_grounding_escalates():
     o = decide_outcome(grounded=None, kb_signal="NO_GROUNDING", model_answer="", record_result=None)
     assert o.escalate is True
     assert o.reason is EscalationReason.NO_GROUNDING
+
+
+def test_render_record_answer_is_natural_never_a_dict():
+    shipped = render_record_answer("order", {"status": "shipped", "eta": "Fri", "tracking_url": "http://t/x"})
+    assert "shipped" in shipped.lower() and "track" in shipped.lower()
+    assert "delivered on" in render_record_answer("order", {"status": "delivered", "eta": "2026-07-01"}).lower()
+    assert "prepared" in render_record_answer("order", {"status": "processing", "eta": "Mon"}).lower()
+    assert "active" in render_record_answer("warranty", {"coverage": "active", "expiry": "2027-01-01"}).lower()
+    assert "expired on" in render_record_answer("warranty", {"coverage": "expired", "expiry": "2024-01-01"}).lower()
+    # never emits a raw dict, for any record type
+    for out in (shipped, render_record_answer("booking", {"status": "confirmed", "dates": "Jul 1-5"})):
+        assert "{" not in out and "}" not in out
+
+
+def test_decide_outcome_record_prefers_model_answer_else_renders():
+    rr = {"status": "ok", "record_type": "order",
+          "record": {"status": "shipped", "eta": "Fri", "tracking_ref": "T1"}}
+    # the model's natural, in-language phrasing is used when present...
+    o = decide_outcome(grounded=None, kb_signal=None,
+                       model_answer="Your order has shipped and arrives Friday.", record_result=rr)
+    assert o.escalate is False and o.answer == "Your order has shipped and arrives Friday."
+    # ...and it falls back to the deterministic render (NOT a raw dict) when the model said nothing.
+    o2 = decide_outcome(grounded=None, kb_signal=None, model_answer="", record_result=rr)
+    assert o2.escalate is False and "{" not in o2.answer and "shipped" in o2.answer.lower()
 
 
 def test_decide_outcome_kb_not_ready_offers_human_without_escalate():
@@ -276,3 +300,158 @@ async def test_run_turn_declined_offer_still_ungrounded_hands_off(monkeypatch):
                        human_offer_pending=True)
     assert r.escalate is True                                    # already offered once → hand off
     assert r.escalation_reason is EscalationReason.NO_GROUNDING
+
+
+# --- [§4.5] deterministic sensitive-intent trigger (tenant sensitive_intent_list) --------------
+
+_SENSITIVE_CFG = {"supported_languages": ["en"], "default_language": "en",
+                  "sensitive_intent_list": ["refund dispute", "complaint", "legal"]}
+
+
+async def test_run_turn_sensitive_intent_escalates(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _NoGroundLLM())
+    r = await run_turn(None, cfg=_SENSITIVE_CFG, industry="retail",
+                       user_text="I want to file a complaint about my order")
+    assert r.escalate is True
+    assert r.escalation_reason is EscalationReason.SENSITIVE
+    assert r.target_state.value == "escalated"
+
+
+async def test_run_turn_sensitive_list_empty_or_no_match_is_not_sensitive(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _NoGroundLLM())
+    # No sensitive keyword in the text → the ungrounded turn takes the proactive-offer path,
+    # never a SENSITIVE hand-off (proves the keyword match, not a blanket escalate).
+    r = await run_turn(None, cfg=_SENSITIVE_CFG, industry="retail", user_text="do you sell unicorns?")
+    assert r.escalation_reason is not EscalationReason.SENSITIVE
+    assert r.offered_human is True
+
+
+# --- [PRD §4.2] verified-lookup → linked-record pointer capture --------------------------------
+
+class _LookupLLM:
+    """Emits one lookup_record tool call, then a plain answer, then the structured metadata."""
+
+    supports_tools = True
+    supports_structured_output = True
+
+    def __init__(self):
+        self.n = 0
+
+    async def complete(self, messages, **kw):
+        if kw.get("response_schema"):
+            return LLMResult(structured={"answer_complete": True, "detected_language": "en",
+                                         "tags": [], "advisory_confidence": None}, model="fake")
+        self.n += 1
+        if self.n == 1:
+            return LLMResult(text="", model="fake", tool_calls=[ToolCall(
+                id="c1", name="lookup_record",
+                arguments={"record_type": "order", "key": "ORD1", "verify_value": "alice@x.com"})])
+        return LLMResult(text="Your order ORD1 is shipped.", model="fake")
+
+
+async def test_run_turn_captures_verified_record_pointer(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _LookupLLM())
+
+    async def _ok(session, args, **kw):
+        return {"status": "ok", "record": {"status": "shipped"}, "dispute": None}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _ok)
+    r = await run_turn(None, cfg=CFG, industry="retail", user_text="where is my order ORD1?")
+    assert r.verified_record == {"type": "order", "key": "ORD1"}
+
+
+async def test_run_turn_no_pointer_when_unverified(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _LookupLLM())
+
+    async def _unverified(session, args, **kw):
+        return {"status": "unverified"}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _unverified)
+    r = await run_turn(None, cfg=CFG, industry="retail", user_text="where is my order?")
+    assert r.verified_record is None
+
+
+# --- [§4.8 / scope] deterministic replies for non-grounded conversational turns ---------------
+
+class _ClassifierLLM:
+    """No tool calls; emits `text` as the answer and classifies the turn as `turn_type` in the
+    metadata pass. Used to exercise the engine's DETERMINISTIC, code-owned non-grounded replies —
+    the model's own `text` must never reach the customer on these turns."""
+
+    supports_tools = True
+    supports_structured_output = True
+
+    def __init__(self, turn_type: str, text: str, record_type: str | None = None):
+        self._tt, self._text, self._rt = turn_type, text, record_type
+
+    async def complete(self, messages, **kw):
+        if kw.get("response_schema"):
+            return LLMResult(structured={"answer_complete": False, "detected_language": "en",
+                                         "tags": [], "turn_type": self._tt, "record_type": self._rt,
+                                         "advisory_confidence": None}, model="fake")
+        return LLMResult(text=self._text, model="fake")
+
+
+async def test_slot_fill_asks_deterministically_and_never_leaks_model_text(monkeypatch):
+    # The model's own text tries to sneak a fabricated fact ("shipped Friday"); the engine must
+    # ship the DETERMINISTIC schema-derived slot-fill prompt instead — the grounding-gate fix.
+    monkeypatch.setattr(engine_mod, "get_llm",
+                        lambda: _ClassifierLLM("needs_info", "Your order shipped Friday! What's your email?", "order"))
+    r = await run_turn(None, cfg=_A2_CFG, industry="retail", user_text="where is my order?")
+    assert r.escalate is False and r.escalation_reason is None
+    assert "order number" in r.answer.lower() and "verify" in r.answer.lower()
+    assert "friday" not in r.answer.lower()          # the model's fabricated fact NEVER reaches the customer
+    assert r.target_state.value == "ai_handling"
+
+
+async def test_smalltalk_relays_natural_reply(monkeypatch):
+    # Small talk is relayed in the model's OWN words (natural, not a canned line) — no escalation.
+    monkeypatch.setattr(engine_mod, "get_llm",
+                        lambda: _ClassifierLLM("smalltalk", "Hey! Doing great — how can I help you today?"))
+    r = await run_turn(None, cfg=_A2_CFG, industry="retail", user_text="hi, how are you?")
+    assert r.escalate is False and r.escalation_reason is None
+    assert r.answer == "Hey! Doing great — how can I help you today?"
+
+
+async def test_smalltalk_falls_back_to_template_when_model_silent(monkeypatch):
+    # Defensive: if the model returns no text, a safe deterministic greeting is used instead.
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _ClassifierLLM("smalltalk", ""))
+    r = await run_turn(None, cfg={**_A2_CFG, "welcome_message": "Hey there! How can I help?"},
+                       industry="retail", user_text="hi")
+    assert r.escalate is False
+    assert r.answer == "Hey there! How can I help?"
+
+
+async def test_capability_relays_natural_reply(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _ClassifierLLM(
+        "capability", "I'm your support assistant — I can track orders and check warranties. What do you need?"))
+    r = await run_turn(None, cfg=_A2_CFG, industry="retail", user_text="what can you do?")
+    assert r.escalate is False
+    assert r.answer.startswith("I'm your support assistant")
+
+
+async def test_out_of_scope_relays_natural_decline_without_escalating(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _ClassifierLLM(
+        "out_of_scope", "That's outside what I can help with here — anything about your orders?"))
+    r = await run_turn(None, cfg=_A2_CFG, industry="retail", user_text="what does BMW mean?")
+    assert r.escalate is False                        # out-of-scope is declined, not escalated
+    assert "outside" in r.answer.lower()
+
+
+async def test_human_request_in_text_escalates_explicit(monkeypatch):
+    # Typing "connect me with a human" (turn_type=human_request) must ESCALATE the ticket — not
+    # just have the AI claim it did. Same deterministic hand-off as the talk-to-human button.
+    monkeypatch.setattr(engine_mod, "get_llm",
+                        lambda: _ClassifierLLM("human_request", "Connecting you with a human now."))
+    r = await run_turn(None, cfg=_A2_CFG, industry="retail", user_text="i want to connect with a human")
+    assert r.escalate is True
+    assert r.escalation_reason is EscalationReason.EXPLICIT
+    assert r.target_state.value == "escalated"
+
+
+async def test_ungrounded_answer_type_still_offers_human(monkeypatch):
+    # turn_type='answer' but nothing grounded (an in-domain question it couldn't answer) → the
+    # proactive human offer still fires; the deterministic path is ONLY for the classified types.
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _NoGroundLLM())
+    r = await run_turn(None, cfg=_A2_CFG, industry="retail", user_text="do you sell unicorns?")
+    assert r.escalate is False and r.offered_human is True and r.answer == PROACTIVE_OFFER

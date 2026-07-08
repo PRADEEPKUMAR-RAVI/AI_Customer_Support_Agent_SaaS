@@ -12,9 +12,15 @@ x-api-env: &api-env
   DATABASE_OWNER_URL: postgresql+asyncpg://cs_owner:cs_owner_pw@postgres:5432/cs_agent
   DATABASE_BYPASS_URL: postgresql+asyncpg://cs_bypass:cs_bypass_pw@postgres:5432/cs_agent
   REDIS_URL: redis://redis:6379/0
-  SMTP_HOST: mailhog
-  SMTP_PORT: "1025"
-  SMTP_FROM: no-reply@cs-agent.local
+  # Email: dev default = the MailPit container (service "mailhog"). To send real mail, set SMTP_*
+  # in your project .env to a provider relay (e.g. Brevo smtp-relay.brevo.com:587, STARTTLS) — see
+  # .env.example. Compose substitutes ${...} from .env, so the relay creds reach every worker.
+  SMTP_HOST: "${SMTP_HOST:-mailhog}"
+  SMTP_PORT: "${SMTP_PORT:-1025}"
+  SMTP_FROM: "${SMTP_FROM:-no-reply@cs-agent.local}"
+  SMTP_USER: "${SMTP_USER:-}"
+  SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+  SMTP_STARTTLS: "${SMTP_STARTTLS:-false}"
   JWT_SECRET: dev-insecure-change-me-32-bytes-minimum-secret
   CREDENTIAL_MASTER_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
   # Offline-first (locked decision): LLM + embeddings default to fakes; flip in your local .env
@@ -24,6 +30,11 @@ x-api-env: &api-env
   USE_FAKE_LLM: "${USE_FAKE_LLM:-true}"
   USE_FAKE_EMBEDDINGS: "${USE_FAKE_EMBEDDINGS:-true}"
   EMBED_CACHE_DIR: /app/models
+  # Light multilingual embedder (384-d) by default so real embeddings load fast on a dev CPU.
+  # EMBED_DIM drives the kb_chunk vector column — changing the model requires a matching dim + reseed.
+  EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}"
+  EMBED_DIM: "${EMBED_DIM:-384}"
+  RERANK_MODEL: "${RERANK_MODEL:-BAAI/bge-reranker-base}"
   LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
   OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
   FRONTEND_ORIGIN: http://localhost:5173
@@ -76,6 +87,8 @@ services:
     # Apply migrations (as owner) then serve.
     command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     environment: *api-env
+    volumes:
+      - modelcache:/app/models   # real BGE weights download here once, persist across restarts
     ports:
       - "8000:8000"
     depends_on:
@@ -93,6 +106,8 @@ services:
       dockerfile: docker/api.Dockerfile
     command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "worker", "-Q", "interactive", "-l", "info"]
     environment: *api-env
+    volumes:
+      - modelcache:/app/models   # real BGE weights download here once, persist across restarts
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,6 +121,8 @@ services:
       dockerfile: docker/api.Dockerfile
     command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "worker", "-Q", "batch", "-l", "info"]
     environment: *api-env
+    volumes:
+      - modelcache:/app/models   # real BGE weights download here once, persist across restarts
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +137,8 @@ services:
       dockerfile: docker/api.Dockerfile
     command: ["celery", "-A", "app.infra.queue.celery_app:celery_app", "beat", "-l", "info"]
     environment: *api-env
+    volumes:
+      - modelcache:/app/models   # real BGE weights download here once, persist across restarts
     depends_on:
       postgres:
         condition: service_healthy
@@ -138,3 +157,4 @@ services:
 
 volumes:
   pgdata:
+  modelcache:

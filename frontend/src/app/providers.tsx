@@ -1,4 +1,4 @@
-/** App-wide providers: Auth context, TanStack Query, and a minimal theme/toast surface. */
+/** App-wide providers: Auth context (identity from the JWT), TanStack Query, tooltips, toasts. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -10,14 +10,19 @@ import {
   type PropsWithChildren,
 } from "react";
 
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 import { bootstrapSession, login as apiLogin, logout as apiLogout } from "../lib/auth";
 import type { Role } from "../lib/rbac";
+import { type Me, readMe } from "../lib/useMe";
 
 interface AuthState {
   authenticated: boolean;
   ready: boolean; // boot silent-refresh finished
   role: Role | null;
-  login: (email: string, password: string) => Promise<void>;
+  email: string | null;
+  login: (email: string, password: string) => Promise<Role | null>;
   logout: () => Promise<void>;
 }
 
@@ -36,12 +41,15 @@ const queryClient = new QueryClient({
 export function Providers({ children }: PropsWithChildren) {
   const [authenticated, setAuthenticated] = useState(false);
   const [ready, setReady] = useState(false);
-  const [role, setRole] = useState<Role | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
     // Boot-time silent refresh — gate protected queries on `ready`.
     bootstrapSession()
-      .then((ok) => setAuthenticated(ok))
+      .then((ok) => {
+        setAuthenticated(ok);
+        if (ok) setMe(readMe());
+      })
       .finally(() => setReady(true));
   }, []);
 
@@ -49,24 +57,30 @@ export function Providers({ children }: PropsWithChildren) {
     () => ({
       authenticated,
       ready,
-      role,
+      role: me?.role ?? null,
+      email: me?.email ?? null,
       async login(email, password) {
         await apiLogin(email, password);
+        const identity = readMe(); // role/email decoded from the fresh access-token JWT
         setAuthenticated(true);
-        setRole("admin"); // refined from the JWT/`/me` endpoint as features land
+        setMe(identity);
+        return identity?.role ?? null;
       },
       async logout() {
         await apiLogout();
         setAuthenticated(false);
-        setRole(null);
+        setMe(null);
       },
     }),
-    [authenticated, ready, role]
+    [authenticated, ready, me]
   );
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+      <TooltipProvider delayDuration={200}>
+        <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+        <Toaster position="top-right" richColors />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

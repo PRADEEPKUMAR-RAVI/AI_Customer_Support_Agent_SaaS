@@ -19,6 +19,7 @@ export interface ChatMessage {
   escalationReason?: string;
   answerComplete: boolean;
   feedback?: "up" | "down"; // thumbs, once rated
+  agent?: boolean; // a reply from a HUMAN support agent (polled in), not the AI — badge it as such
 }
 
 export type ConnState = "idle" | "streaming" | "error";
@@ -43,5 +44,14 @@ export function userMessage(id: string, content: string): ChatMessage {
   return {
     id, role: "user", content, streaming: false,
     citations: [], tags: [], escalate: false, answerComplete: false,
+  };
+}
+
+/** A finished reply from a human support agent (surfaced by the controller's live poll). Rendered
+ * as an assistant bubble but flagged `agent` so the UI can label it "Support agent". */
+export function agentMessage(id: string, content: string): ChatMessage {
+  return {
+    id, role: "assistant", content, streaming: false,
+    citations: [], tags: [], escalate: false, answerComplete: true, agent: true,
   };
 }

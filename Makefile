@@ -2,7 +2,7 @@
 # .venv. Picks the venv python for Windows (.venv/Scripts) or Unix (.venv/bin) automatically.
 VENV_PY := $(if $(wildcard .venv/Scripts/python.exe),.venv/Scripts/python.exe,.venv/bin/python)
 
-.PHONY: help up down reset logs migrate seed export test test-rls lint fe-install fe-gen fe-test fe-dev
+.PHONY: help up down reset logs bake-models migrate seed export test test-rls lint fe-install fe-gen fe-test fe-dev
 
 help:
 	@echo "up/down/logs           - full docker stack"
@@ -22,6 +22,11 @@ down:
 reset:
 	docker compose down -v
 	@echo "Volumes removed. Run 'make up', then seed: docker compose exec api python -m app.cli.seed"
+
+# One-time real embed/rerank model prefetch into the persistent `modelcache` volume (see
+# app/cli/bake_models.py). Run once after `make up` when USE_FAKE_EMBEDDINGS=false; ~3-4GB.
+bake-models:
+	docker compose run --rm api python -m app.cli.bake_models
 
 logs:
 	docker compose logs -f

@@ -12,6 +12,8 @@ event loop — important for ``rerank``, which runs in the retrieval hot path.
 
 from __future__ import annotations
 
+import math
+
 import anyio
 
 from app.infra.embeddings.base import EmbeddingPort, RerankHit
@@ -52,8 +54,14 @@ class BgeOnnxClient(EmbeddingPort):
 
     async def rerank(self, query: str, docs: list[str], top_k: int) -> list[RerankHit]:
         def _run() -> list[float]:
-            # fastembed CrossEncoder.rerank(query, docs) -> one score per doc, in docs order.
-            return [float(s) for s in self._get_reranker().rerank(query, docs)]
+            # fastembed CrossEncoder.rerank(query, docs) -> one RAW LOGIT per doc, in docs order.
+            # bge-reranker-base logits are unbounded (empirically ~ -9 off-topic … +6 on-topic, and
+            # a genuinely relevant hit can still sit slightly BELOW 0, e.g. -0.2). The grounding gate
+            # thresholds on a [0,1] score (the FakeReranker's scale), so squash the logit through a
+            # sigmoid: this keeps the relative order (sigmoid is monotonic) but puts real scores on
+            # the SAME 0..1 scale as the fake — on-topic ≈ 0.45–0.99, off-topic ≈ 0.001 — so one
+            # tenant relevance_threshold (default 0.15) works identically for both providers.
+            return [1.0 / (1.0 + math.exp(-float(s))) for s in self._get_reranker().rerank(query, docs)]
 
         scores = await anyio.to_thread.run_sync(_run)
         hits = [RerankHit(index=i, score=s) for i, s in enumerate(scores)]

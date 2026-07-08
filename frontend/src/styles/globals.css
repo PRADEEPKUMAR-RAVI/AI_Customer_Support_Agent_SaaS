@@ -1,0 +1,324 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Geist is self-hosted (no CDN — CSP `font-src 'self'` safe); the @font-face CSS is imported
+   as a JS side-effect in src/main.tsx so Vite resolves it from node_modules reliably. */
+
+/* Dark mode driven by a `.dark` class on <html> (set by useTheme, before paint). */
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Design tokens — semantic, OKLCH. Light = :root, dark = .dark.
+   Primary = Indigo→Violet "modern AI" (#4f46e5 / #6366f1). Neutral = Slate.
+   All text/interactive pairs verified WCAG AA. Per-tenant branding overrides
+   --primary / --primary-foreground / --ring on a [data-tenant] scope.
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.02 265); /* slate-950 */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.02 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.129 0.02 265);
+
+  --primary: oklch(0.511 0.262 277); /* indigo-600 #4f46e5 */
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.968 0.007 248); /* slate-100 */
+  --secondary-foreground: oklch(0.208 0.03 265);
+  --muted: oklch(0.968 0.007 248);
+  --muted-foreground: oklch(0.554 0.03 257); /* slate-500, 4.76:1 on white */
+  --accent: oklch(0.961 0.017 272); /* indigo-50 tint #eef2ff-ish */
+  --accent-foreground: oklch(0.398 0.18 277); /* indigo-700 */
+
+  --destructive: oklch(0.577 0.245 27.3); /* red-600 */
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.596 0.13 163); /* emerald-600 */
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.769 0.16 70); /* amber-500 — needs dark text */
+  --warning-foreground: oklch(0.279 0.03 265);
+  --info: oklch(0.546 0.22 262); /* blue-600 */
+  --info-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0.929 0.01 255); /* slate-200 */
+  --input: oklch(0.929 0.01 255);
+  --ring: oklch(0.511 0.262 277); /* indigo focus ring */
+
+  --sidebar: oklch(0.985 0.002 248);
+  --sidebar-foreground: oklch(0.129 0.02 265);
+  --sidebar-primary: oklch(0.511 0.262 277);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.961 0.017 272);
+  --sidebar-accent-foreground: oklch(0.398 0.18 277);
+  --sidebar-border: oklch(0.929 0.01 255);
+  --sidebar-ring: oklch(0.511 0.262 277);
+
+  /* Data-viz categorical (validated, colorblind-checked) — light surface. */
+  --chart-1: #2a78d6;
+  --chart-2: #1baf7a;
+  --chart-3: #eda100;
+  --chart-4: #008300;
+  --chart-5: #4a3aa7;
+  --chart-6: #e34948;
+  --chart-7: #e87ba4;
+  --chart-8: #eb6834;
+}
+
+.dark {
+  --background: oklch(0.129 0.02 265); /* slate-950 */
+  --foreground: oklch(0.984 0.003 248); /* slate-50 */
+  --card: oklch(0.208 0.03 265); /* slate-800/900 */
+  --card-foreground: oklch(0.984 0.003 248);
+  --popover: oklch(0.208 0.03 265);
+  --popover-foreground: oklch(0.984 0.003 248);
+
+  --primary: oklch(0.585 0.233 277); /* indigo-500 #6366f1 */
+  --primary-foreground: oklch(0.984 0.003 248);
+  --secondary: oklch(0.279 0.03 260); /* slate-700/800 */
+  --secondary-foreground: oklch(0.984 0.003 248);
+  --muted: oklch(0.279 0.03 260);
+  --muted-foreground: oklch(0.704 0.03 257); /* slate-400, ~7.8:1 on slate-950 */
+  --accent: oklch(0.279 0.03 260);
+  --accent-foreground: oklch(0.984 0.003 248);
+
+  --destructive: oklch(0.704 0.19 22.2); /* red-500 */
+  --destructive-foreground: oklch(0.984 0.003 248);
+  --success: oklch(0.696 0.15 162); /* emerald-500 */
+  --success-foreground: oklch(0.129 0.02 265);
+  --warning: oklch(0.828 0.19 84); /* amber-400 */
+  --warning-foreground: oklch(0.129 0.02 265);
+  --info: oklch(0.623 0.19 260); /* blue-500 */
+  --info-foreground: oklch(0.129 0.02 265);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.673 0.182 277); /* indigo-400 */
+
+  --sidebar: oklch(0.168 0.025 265);
+  --sidebar-foreground: oklch(0.984 0.003 248);
+  --sidebar-primary: oklch(0.585 0.233 277);
+  --sidebar-primary-foreground: oklch(0.984 0.003 248);
+  --sidebar-accent: oklch(0.279 0.03 260);
+  --sidebar-accent-foreground: oklch(0.984 0.003 248);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.673 0.182 277);
+
+  /* Data-viz categorical — dark surface (re-stepped, not auto-flipped). */
+  --chart-1: #3987e5;
+  --chart-2: #199e70;
+  --chart-3: #c98500;
+  --chart-4: #008300;
+  --chart-5: #9085e9;
+  --chart-6: #e66767;
+  --chart-7: #d55181;
+  --chart-8: #d95926;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", "JetBrains Mono", monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  /* Tabular figures where digits must align (tables, KPIs, IDs, cost, timestamps). */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Chat streaming caret + inline spinner (shared by the console chat and the widget; the widget
+   redefines these on its own stylesheet since the shadow root can't see this one). */
+@keyframes cswblink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes cswspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes cswfadein {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes cswbounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Markdown rendering for AI answers (react-markdown). Duplicated in the widget's shadow-DOM
+   stylesheet (widget/panel.tsx) since the shadow root can't see this file — keep them in sync. */
+.chat-md {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.chat-md > :first-child {
+  margin-top: 0;
+}
+.chat-md > :last-child {
+  margin-bottom: 0;
+}
+.chat-md p {
+  margin: 0 0 0.6em;
+}
+.chat-md ul,
+.chat-md ol {
+  margin: 0.4em 0;
+  padding-inline-start: 1.35em;
+}
+.chat-md ul {
+  list-style: disc;
+}
+.chat-md ol {
+  list-style: decimal;
+}
+.chat-md li {
+  margin: 0.2em 0;
+}
+.chat-md a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-md strong {
+  font-weight: 600;
+}
+.chat-md code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.88em;
+  background: var(--secondary);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.chat-md pre {
+  background: var(--secondary);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.chat-md pre code {
+  background: none;
+  padding: 0;
+}
+.chat-md h1,
+.chat-md h2,
+.chat-md h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.7em 0 0.3em;
+}
+.chat-md h1 {
+  font-size: 1.15em;
+}
+.chat-md h2,
+.chat-md h3 {
+  font-size: 1.05em;
+}
+.chat-md blockquote {
+  border-inline-start: 3px solid var(--border);
+  padding-inline-start: 12px;
+  color: var(--muted-foreground);
+  margin: 0.5em 0;
+}
+.chat-md table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+  margin: 0.5em 0;
+}
+.chat-md th,
+.chat-md td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

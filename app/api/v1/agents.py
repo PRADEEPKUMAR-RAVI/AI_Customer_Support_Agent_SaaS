@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_permission
 from app.api.errors import AppError
+from app.core.events import emit
 from app.domain.ticketing.states import TicketState
 from app.infra.db.models.conversation import Message
 from app.infra.db.models.ticket import InternalNote, Ticket
@@ -145,6 +146,17 @@ async def reply(
     message = Message(conversation_id=ticket.conversation_id, role="agent", content=body.content)
     session.add(message)
     await session.flush()
+    # After-hours follow-up ([A15]/§4.5.1): if the customer left a contact email (because no agent
+    # was available when they escalated and they may have since closed the widget), email them the
+    # agent's reply so the promised follow-up actually reaches them — not only via the live widget
+    # poll. Only fires when contact_email is set, so in-widget customers aren't emailed each reply.
+    if ticket.contact_email:
+        await emit(
+            session,
+            event_type="email.customer_reply",
+            payload={"to": ticket.contact_email, "reply": body.content},
+            dedupe_key=f"agent_reply:{message.id}",
+        )
     return {"id": str(message.id)}
 
 

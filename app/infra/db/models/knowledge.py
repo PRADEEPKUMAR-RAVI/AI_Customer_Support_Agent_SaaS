@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.config import get_settings
 from app.infra.db.base import Base, TenantMixin, TimestampMixin, uuid_pk
 
-_EMBED_DIM = get_settings().embed_dim  # 1024 for BGE-M3
+_EMBED_DIM = get_settings().embed_dim  # 384 for the multilingual MiniLM embedder (must match column)
 
 
 class Source(Base, TenantMixin, TimestampMixin):

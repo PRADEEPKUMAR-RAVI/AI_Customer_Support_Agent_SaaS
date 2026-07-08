@@ -15,20 +15,81 @@ interface WidgetConfig {
   apiBase: string;
 }
 
-const RESET = `
-:host { all: initial; }
+// The shadow root can't see the console's globals.css, so the shared ChatPanel's `var(--token)`
+// reads are satisfied here: design tokens on :host (light + a prefers-color-scheme dark override
+// so the widget follows the visitor's OS theme), plus the chat caret/spinner keyframes. Injected
+// via a constructable stylesheet (NOT an inline <style>) to survive a strict CSP ([IMP-FE-3]).
+const WIDGET_CSS = `
+:host {
+  all: initial;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.02 265);
+  --card: oklch(1 0 0);
+  --secondary: oklch(0.968 0.007 248);
+  --muted-foreground: oklch(0.554 0.03 257);
+  --primary: oklch(0.511 0.262 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.961 0.017 272);
+  --accent-foreground: oklch(0.398 0.18 277);
+  --destructive: oklch(0.577 0.245 27.3);
+  --border: oklch(0.929 0.01 255);
+  --radius: 0.5rem;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :host {
+    --background: oklch(0.129 0.02 265);
+    --foreground: oklch(0.984 0.003 248);
+    --card: oklch(0.208 0.03 265);
+    --secondary: oklch(0.279 0.03 260);
+    --muted-foreground: oklch(0.704 0.03 257);
+    --primary: oklch(0.585 0.233 277);
+    --primary-foreground: oklch(0.984 0.003 248);
+    --accent: oklch(0.279 0.03 260);
+    --accent-foreground: oklch(0.984 0.003 248);
+    --destructive: oklch(0.704 0.19 22.2);
+    --border: oklch(1 0 0 / 0.14);
+  }
+}
 * { box-sizing: border-box; }
-.cs-widget-root { height: 100%; font-family: system-ui, -apple-system, sans-serif; }
+.cs-widget-root { height: 100%; background: var(--background); }
+@keyframes cswblink { 50% { opacity: 0; } }
+@keyframes cswspin { to { transform: rotate(360deg); } }
+@keyframes cswfadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes cswbounce { 0%,80%,100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+/* Markdown for AI answers — mirror of the .chat-md rules in src/styles/globals.css. */
+.chat-md { font-size: 15px; line-height: 1.6; }
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0 0 0.6em; }
+.chat-md ul, .chat-md ol { margin: 0.4em 0; padding-inline-start: 1.35em; }
+.chat-md ul { list-style: disc; }
+.chat-md ol { list-style: decimal; }
+.chat-md li { margin: 0.2em 0; }
+.chat-md a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.chat-md strong { font-weight: 600; }
+.chat-md code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.88em; background: var(--secondary); padding: 0.1em 0.35em; border-radius: 4px; }
+.chat-md pre { background: var(--secondary); padding: 10px 12px; border-radius: 8px; overflow-x: auto; margin: 0.5em 0; }
+.chat-md pre code { background: none; padding: 0; }
+.chat-md h1, .chat-md h2, .chat-md h3 { font-weight: 600; line-height: 1.3; margin: 0.7em 0 0.3em; }
+.chat-md h1 { font-size: 1.15em; }
+.chat-md h2, .chat-md h3 { font-size: 1.05em; }
+.chat-md blockquote { border-inline-start: 3px solid var(--border); padding-inline-start: 12px; color: var(--muted-foreground); margin: 0.5em 0; }
+.chat-md table { border-collapse: collapse; font-size: 0.92em; margin: 0.5em 0; }
+.chat-md th, .chat-md td { border: 1px solid var(--border); padding: 4px 8px; text-align: start; }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
 `;
 
 function adopt(root: ShadowRoot): void {
   try {
     const sheet = new CSSStyleSheet();
-    sheet.replaceSync(RESET);
+    sheet.replaceSync(WIDGET_CSS);
     root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
   } catch {
     // Very old engines without constructable stylesheets: the inline component styles still
-    // render correctly; only the :host reset is skipped.
+    // render correctly; only the :host tokens/reset are skipped (chat falls back to its hex).
   }
 }
 
