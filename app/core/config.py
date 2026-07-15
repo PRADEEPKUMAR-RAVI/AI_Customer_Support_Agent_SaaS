@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     embed_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     rerank_model: str = "jinaai/jina-reranker-v2-base-multilingual"
     embed_dim: int = 384
+    # Rerank toggle. The cross-encoder is the dominant retrieval cost (the ~1GB startup warmup +
+    # a CPU forward pass over the fused pool every turn). When false, kb_retrieve skips it: it
+    # orders by a cheap lexical-overlap fallback (same 0..1 scale as FakeReranker, so the tenant
+    # relevance_threshold / grounding gate still applies) and the startup warmup skips the reranker.
+    # Trade-off: the fallback is lexical, not semantic/cross-lingual — flip back to true to restore
+    # multilingual grounding quality. No key/model change needed to toggle.
+    rerank_enabled: bool = False
     # Where fastembed caches the ONNX weights. Pinned to a persistent path in the Docker image so
     # the model is baked into an image layer (no per-machine download). None -> fastembed default.
     embed_cache_dir: str | None = None

@@ -25,10 +25,11 @@ async def _warm_embeddings() -> None:
     zero-cost FakeEmbedder. Failure is non-fatal: turns just cold-load on first use."""
     from app.infra.embeddings.router import get_embedder
 
+    rerank = get_settings().rerank_enabled
     try:
-        log.info("warming embedder + reranker at startup...")
-        await get_embedder().warmup()
-        log.info("embedder + reranker warm; grounded turns are now fast.")
+        log.info("warming embedder%s at startup...", " + reranker" if rerank else " (reranker off)")
+        await get_embedder().warmup(rerank=rerank)
+        log.info("embedder%s warm; grounded turns are now fast.", " + reranker" if rerank else "")
     except Exception:  # noqa: BLE001
         log.exception("embedder warmup failed; first grounded turn will cold-load")
 

@@ -22,6 +22,7 @@ from app.core.latency import atimed
 from app.domain.knowledge.chunking import chunk_document
 from app.infra.db.models.knowledge import FileBlob, KbChunk, Source
 from app.infra.db.session import with_tenant
+from app.infra.embeddings.base import RerankHit
 from app.infra.embeddings.router import get_embedder
 from app.infra.parsers import get_parser
 
@@ -263,6 +264,22 @@ NO_GROUNDING = "NO_GROUNDING"
 KB_NOT_READY = "KB_NOT_READY"
 
 
+def _lexical_hits(query: str, docs: list[str], top_k: int) -> list[RerankHit]:
+    """Grounding signal used when the cross-encoder reranker is OFF (settings.rerank_enabled=false).
+
+    Same lexical-overlap ratio and 0..1 scale as ``FakeReranker`` — |q∩doc| / |q| — so the tenant
+    ``relevance_threshold`` (and the whole grounding gate) works unchanged without the ~1GB
+    cross-encoder. Coarse and NOT semantic/cross-lingual; flip ``RERANK_ENABLED`` back on to restore
+    multilingual grounding quality."""
+    q = set(query.lower().split())
+    hits = [
+        RerankHit(index=i, score=round(len(q & set(d.lower().split())) / (len(q) or 1), 6))
+        for i, d in enumerate(docs)
+    ]
+    hits.sort(key=lambda h: h.score, reverse=True)
+    return hits[:top_k]
+
+
 @dataclass
 class GroundedResult:
     chunks: list[dict] = field(default_factory=list)   # {content, source_id, title, ...}
@@ -337,9 +354,14 @@ async def kb_retrieve(
 
     # Rerank the fused pool (cross-encoder; FakeReranker = lexical overlap in dev). h.index
     # indexes cand_rows, not the per-arm lists. First turn pays the ~1GB rerank model cold-load
-    # (see rerank.model_load) — the dominant first-query cost.
-    async with atimed("kb.rerank", docs=len(cand_rows)):
-        hits = await embedder.rerank(query, [r.content for r in cand_rows], top_k)
+    # (see rerank.model_load) — the dominant first-query cost. When rerank is toggled OFF
+    # (settings.rerank_enabled=false) we skip that cost and fall back to a cheap lexical overlap on
+    # the same 0..1 scale, so the grounding gate below still holds against the tenant threshold.
+    if get_settings().rerank_enabled:
+        async with atimed("kb.rerank", docs=len(cand_rows)):
+            hits = await embedder.rerank(query, [r.content for r in cand_rows], top_k)
+    else:
+        hits = _lexical_hits(query, [r.content for r in cand_rows], top_k)
     if not hits or hits[0].score < threshold:  # grounding gate: top-1 must clear threshold
         return NO_GROUNDING
     chosen = [(cand_rows[h.index], h.score) for h in hits]

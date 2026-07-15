@@ -86,7 +86,10 @@ class BgeOnnxClient(EmbeddingPort):
         hits.sort(key=lambda h: h.score, reverse=True)
         return hits[:top_k]
 
-    async def warmup(self) -> None:
-        """Trigger model download + graph init off the hot path (cold p95 mitigation)."""
+    async def warmup(self, *, rerank: bool = True) -> None:
+        """Trigger model download + graph init off the hot path (cold p95 mitigation). Skips the
+        ~1GB reranker load when ``rerank`` is false (the retrieval path won't call it — see
+        ``settings.rerank_enabled``)."""
         await self.embed(["warmup"])
-        await self.rerank("warmup", ["warmup"], 1)
+        if rerank:
+            await self.rerank("warmup", ["warmup"], 1)
