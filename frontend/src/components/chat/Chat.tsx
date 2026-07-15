@@ -77,7 +77,8 @@ export function Chat({ widgetKey, apiBase = "/api/v1", requireConsent = true }: 
   );
 
   // Live updates: while the chat is mounted, poll for human-agent replies so the customer sees a
-  // human's messages appear once a ticket is escalated (the AI goes silent then). Stops on unmount.
+  // human's messages appear once an agent sends their first reply (the AI goes silent then). Stops
+  // on unmount.
   useEffect(() => {
     controller?.startLiveUpdates();
     return () => controller?.stopLiveUpdates();

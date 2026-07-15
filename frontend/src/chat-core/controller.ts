@@ -44,11 +44,12 @@ export class ChatController {
   private sessionToken: string;
   // At most one transparent re-auth per user-initiated turn (prevents a reauth↔not_found loop).
   private reauthedThisTurn = false;
-  // Live updates: poll the transcript for HUMAN-agent replies (the AI goes silent once a ticket is
-  // escalated, so the customer would otherwise never see the human's messages). We fold in agent
-  // messages by server id — the one message class the widget can't produce locally — so there is
-  // no risk of duplicating the customer/AI turns this controller already renders.
+  // Live updates: poll the transcript for HUMAN-agent replies. Once a human agent sends their first
+  // message the AI goes silent, so the customer would otherwise never see the human's messages. We
+  // fold in agent messages by server id — the one message class the widget can't produce locally —
+  // so there is no risk of duplicating the customer/AI turns this controller already renders.
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private wakePoll: (() => void) | null = null; // immediate re-poll when the tab regains focus
   private readonly seenAgentIds = new Set<string>();
 
   constructor(private readonly opts: ChatControllerOptions) {
@@ -93,6 +94,9 @@ export class ChatController {
       messages: [...s.messages, userMessage(clientMsgId, text || "🗣"), emptyAssistant()],
     }));
     await this.stream();
+    // A turn just finished — polling was paused while it streamed, so sync now in case a human
+    // agent replied during it (otherwise their message waits for the next interval tick).
+    void this.pollForAgentReplies();
   }
 
   /** Re-run the last turn with the SAME client_msg_id → backend replays instead of re-executing. */
@@ -129,10 +133,10 @@ export class ChatController {
 
   // --- live updates (human-agent replies) ---
 
-  /** Start polling the transcript so a HUMAN agent's replies appear in the customer's chat. Once a
-   * ticket is escalated the AI stops answering, so without this the customer never sees the human.
-   * Idempotent (a second call is a no-op); pair with stopLiveUpdates() on unmount. A production
-   * build could swap this for an SSE/pub-sub push, but polling needs no extra infra and is robust. */
+  /** Start polling the transcript so a HUMAN agent's replies appear in the customer's chat. Once an
+   * agent sends their first message the AI stops answering, so without this the customer never sees
+   * the human. Idempotent (a second call is a no-op); pair with stopLiveUpdates() on unmount. A
+   * production build could swap this for an SSE/pub-sub push, but polling needs no extra infra. */
   startLiveUpdates(intervalMs = 4000): void {
     if (this.pollTimer !== null) return;
     void this.pollForAgentReplies(); // check immediately, then on the interval
@@ -142,12 +146,28 @@ export class ChatController {
       if (typeof document !== "undefined" && document.hidden) return;
       void this.pollForAgentReplies();
     }, intervalMs);
+    // Poll IMMEDIATELY when the customer returns to the tab. Polling is paused while the tab is
+    // hidden (above), which it is whenever the user is replying in a separate agent tab — so
+    // without this the agent's reply would only surface on the next interval tick (or feel like it
+    // "never arrived" if they glance back and away). Fires on tab visibility AND window focus.
+    if (typeof document !== "undefined") {
+      this.wakePoll = () => {
+        if (this.state.conn !== "streaming" && !document.hidden) void this.pollForAgentReplies();
+      };
+      document.addEventListener("visibilitychange", this.wakePoll);
+      if (typeof window !== "undefined") window.addEventListener("focus", this.wakePoll);
+    }
   }
 
   stopLiveUpdates(): void {
     if (this.pollTimer !== null) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
+    }
+    if (this.wakePoll && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.wakePoll);
+      if (typeof window !== "undefined") window.removeEventListener("focus", this.wakePoll);
+      this.wakePoll = null;
     }
   }
 

@@ -115,7 +115,7 @@ async def capture_contact_email(
     session: AsyncSession, *, ticket_id: uuid.UUID, email: str
 ) -> None:
     """[A15] The narrow, non-LLM after-hours email-capture path. Writes ``ticket.contact_email``
-    even while the ticket is ``escalated`` — the ONE deliberate exception to "the AI stops
-    answering once escalated" [IMP-TKT-1], and it must stay a plain field write, never an LLM
-    turn. Kept distinct from any verified ``linked_record`` identity."""
+    as a plain field write, never an LLM turn — the live capture (from message text while a
+    hand-off is in flight) lives in ``conversation_service``; this remains as a direct helper.
+    Kept distinct from any verified ``linked_record`` identity."""
     await session.execute(update(Ticket).where(Ticket.id == ticket_id).values(contact_email=email))

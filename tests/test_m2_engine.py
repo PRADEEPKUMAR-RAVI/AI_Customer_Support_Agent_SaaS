@@ -50,6 +50,23 @@ def test_decide_outcome_grounded_prefers_model_answer_else_chunk():
     assert "Returns are accepted within 30 days." in o2.answer
 
 
+def test_decide_outcome_verified_record_wins_over_kb():
+    # The customer looked up THEIR order and it verified; even if a KB search also matched, the
+    # answer must be the record's status — not a documentation dump — and carry NO KB citations.
+    g = GroundedResult(
+        chunks=[{"content": "placed — we received your order. shipped — it has left our warehouse."}],
+        citations=[{"index": 0, "source_id": "s1", "title": "acme_retail_kb.md"}],
+        top_score=0.5,
+    )
+    o = decide_outcome(grounded=g, kb_signal=None, model_answer="",
+                       record_result={"status": "ok", "record_type": "order",
+                                      "record": {"status": "cancelled"}})
+    assert o.escalate is False
+    assert "cancel" in o.answer.lower()          # the customer's actual order status
+    assert "documentation" not in o.answer.lower()
+    assert o.citations == []                       # no KB sources on a record answer
+
+
 def test_decide_outcome_no_grounding_escalates():
     o = decide_outcome(grounded=None, kb_signal="NO_GROUNDING", model_answer="", record_result=None)
     assert o.escalate is True
@@ -420,6 +437,101 @@ async def test_smalltalk_falls_back_to_template_when_model_silent(monkeypatch):
                        industry="retail", user_text="hi")
     assert r.escalate is False
     assert r.answer == "Hey there! How can I help?"
+
+
+# --- cross-turn slot memory: the customer gives the key on one turn, the verify value on the next -
+
+class _SlotLLM:
+    """Fake for the multi-turn record-lookup flow: no model tool call (the ENGINE drives the
+    lookup), emits a configurable metadata envelope — what the model 'extracts' this turn."""
+
+    supports_tools = True
+    supports_structured_output = True
+
+    def __init__(self, *, turn_type="needs_info", record_type="order", has_key=False,
+                 has_verify=False, key_value=None, verify_value=None):
+        self._meta = {
+            "answer_complete": False, "detected_language": "en", "tags": [],
+            "turn_type": turn_type, "record_type": record_type,
+            "has_lookup_key": has_key, "has_verify_value": has_verify,
+            "lookup_key_value": key_value, "verify_value": verify_value, "advisory_confidence": None,
+        }
+
+    async def complete(self, messages, **kw):
+        if kw.get("response_schema"):
+            return LLMResult(structured=self._meta, model="fake")
+        return LLMResult(text="", model="fake")
+
+
+async def test_slot_memory_remembers_key_and_asks_only_for_verify(monkeypatch):
+    # Customer gives ONLY the order id: the engine must remember it for the next turn AND ask only
+    # for the still-missing verify value, not re-demand the order number.
+    llm = _SlotLLM(has_key=True, key_value="1005")
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+    r = await run_turn(None, cfg=CFG, industry="retail", user_text="my order id is 1005")
+    assert r.pending_lookup == {"record_type": "order", "key_value": "1005"}
+    assert "email" in r.answer.lower() and r.answer.endswith("?")
+    assert "share your order number" not in r.answer.lower()   # doesn't re-ask for the id
+
+
+async def test_engine_completes_lookup_when_verify_arrives_even_if_model_forgets(monkeypatch):
+    # THE bug: the customer gave the order id on an earlier turn, then only the email now, and the
+    # model 'forgets' EVERYTHING (record_type + all slot fields null) and does NOT call the tool.
+    # The ENGINE must still complete the lookup deterministically — record_type + key from the
+    # remembered pending_lookup, email from the message via the regex fallback.
+    llm = _SlotLLM(record_type=None, has_key=False, has_verify=False, key_value=None, verify_value=None)
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+    seen = {}
+
+    async def _capture(session, args, **kw):
+        seen.update(args)
+        return {"status": "ok", "record": {"status": "shipped", "eta": "Fri"},
+                "record_type": "order", "dispute": None}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _capture)
+    r = await run_turn(None, cfg=CFG, industry="retail", user_text="godbos40534@gmail.com",
+                       pending_lookup={"record_type": "order", "key_value": "1005"})
+    # The engine called the lookup with the remembered key + the email from the message.
+    assert seen == {"record_type": "order", "key": "1005", "verify_value": "godbos40534@gmail.com"}
+    assert r.verified_record == {"type": "order", "key": "1005"}   # verified pointer captured
+    assert r.escalate is False
+    assert "ship" in r.answer.lower()                              # answers with the order status
+    assert r.pending_lookup is None                                # cleared once verified
+
+
+async def test_failed_lookup_retries_instead_of_escalating(monkeypatch):
+    # A wrong/mistyped detail (unverified) or a missing record (not_found) must NOT escalate the
+    # customer to a human — it returns the SAME neutral retry message so they can fix it and try
+    # again. (Regression for the bug where a bad email dumped the user into an after-hours hand-off.)
+    llm = _SlotLLM(has_key=True, has_verify=True, key_value="1005", verify_value="wrong@x.com")
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+
+    for status in ("unverified", "not_found"):
+        async def _fail(session, args, _s=status, **kw):
+            return {"status": _s}
+
+        monkeypatch.setattr(engine_mod, "lookup_record_tool", _fail)
+        r = await run_turn(None, cfg=CFG, industry="retail",
+                           user_text="order 1005, email wrong@x.com")
+        assert r.escalate is False                     # not a dead end — retryable
+        assert r.verified_record is None
+        assert "double-check" in r.answer.lower() and "order number" in r.answer.lower()
+
+
+async def test_engine_completes_lookup_from_model_extracted_values(monkeypatch):
+    # No prior pending_lookup: the model extracts BOTH values from the conversation this turn and
+    # the engine performs the lookup — no dependence on model tool-calling.
+    llm = _SlotLLM(has_key=True, has_verify=True, key_value="1005", verify_value="a@b.com")
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+
+    async def _ok(session, args, **kw):
+        return {"status": "ok", "record": {"status": "delivered"}, "record_type": "order",
+                "dispute": None}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _ok)
+    r = await run_turn(None, cfg=CFG, industry="retail", user_text="my order 1005, email a@b.com")
+    assert r.verified_record == {"type": "order", "key": "1005"}
+    assert "deliver" in r.answer.lower()
 
 
 async def test_capability_relays_natural_reply(monkeypatch):

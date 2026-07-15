@@ -1,5 +1,12 @@
-"""AI-engine tools. Transitions are NOT a model tool — they're code-enforced via the whitelist
-in the engine — so only KB retrieval, record lookup, and escalate are exposed to the model."""
+"""AI-engine tools. Transitions are NOT a model tool — they're code-enforced via the whitelist.
+
+`lookup_record` is deliberately NOT exposed to the model: record lookups are driven by ENGINE code
+(``engine.run_turn`` calls ``lookup_record_tool`` once it has the extracted key + verify value), so
+they don't depend on the model choosing to call a tool or constructing its arguments correctly —
+which proved unreliable across turns. The model only EXTRACTS the slot values into the turn
+metadata. So the model-facing menu is just KB retrieval + escalate. (``lookup_record_tool`` is still
+imported here — the engine imports it from this package — and the engine's tool loop still tolerates
+a hallucinated ``lookup_record`` call for defence in depth.)"""
 
 from app.services.ai_engine.tools.escalate import escalate_tool  # noqa: F401
 from app.services.ai_engine.tools.kb_retrieve import kb_retrieve_tool  # noqa: F401
@@ -15,25 +22,6 @@ TOOL_SPECS = [
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
                 "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "lookup_record",
-            "description": (
-                "Look up a customer's personal record (order/warranty/etc.) AFTER collecting the "
-                "lookup key and one identity verification value."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "record_type": {"type": "string"},
-                    "key": {"type": "string"},
-                    "verify_value": {"type": "string"},
-                },
-                "required": ["record_type", "key", "verify_value"],
             },
         },
     },

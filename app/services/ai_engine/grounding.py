@@ -30,6 +30,17 @@ class Outcome:
 
 
 def decide_outcome(*, grounded, kb_signal, model_answer: str, record_result: dict | None) -> Outcome:
+    if record_result and record_result.get("status") == "ok":
+        # A VERIFIED personal record wins over generic KB docs: the customer asked about THEIR order,
+        # not what order statuses mean, so a successful lookup this turn is the answer — even if the
+        # model also ran a KB search on the side. Answer from the record (no KB citations); prefer
+        # the model's natural phrasing when present, else a deterministic per-state rendering (§4.8).
+        # Never dump the raw record dict.
+        answer = model_answer.strip() or render_record_answer(
+            record_result.get("record_type", ""), record_result.get("record") or {}
+        )
+        return Outcome(answer=answer, escalate=False, reason=None, retrieval_hits=0)
+
     if isinstance(grounded, GroundedResult) and grounded.chunks:
         # Prefer the model's answer (generated from the chunks, which are in its context) so a
         # real LLM's grounded generation shows through; fall back to the retrieved text verbatim
@@ -38,15 +49,6 @@ def decide_outcome(*, grounded, kb_signal, model_answer: str, record_result: dic
         answer = model_answer.strip() or f"Based on our documentation: {top}"
         return Outcome(answer=answer, escalate=False, reason=None,
                        retrieval_hits=len(grounded.chunks), citations=grounded.citations)
-
-    if record_result and record_result.get("status") == "ok":
-        # Prefer the model's natural phrasing (grounded in the verified record in its context, in
-        # the customer's language, per §4.8); fall back to a deterministic per-state rendering when
-        # the model produced nothing (e.g. the fake). Never dump the raw record dict.
-        answer = model_answer.strip() or render_record_answer(
-            record_result.get("record_type", ""), record_result.get("record") or {}
-        )
-        return Outcome(answer=answer, escalate=False, reason=None, retrieval_hits=0)
 
     if kb_signal == KB_NOT_READY:
         return Outcome(answer=KB_NOT_READY_MSG, escalate=False, reason=None, retrieval_hits=0)

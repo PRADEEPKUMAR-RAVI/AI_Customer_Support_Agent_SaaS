@@ -13,9 +13,11 @@ event loop — important for ``rerank``, which runs in the retrieval hot path.
 from __future__ import annotations
 
 import math
+import threading
 
 import anyio
 
+from app.core.latency import timed
 from app.infra.embeddings.base import EmbeddingPort, RerankHit
 
 
@@ -29,21 +31,37 @@ class BgeOnnxClient(EmbeddingPort):
         self._cache_dir = cache_dir  # persistent path -> baked into the Docker image layer
         self._embedder = None
         self._reranker = None
+        # Double-checked-locking guards: embed()/rerank() run in worker threads (anyio.to_thread),
+        # so a first customer turn racing the startup warmup could otherwise trigger TWO concurrent
+        # model loads (the reranker is ~1GB). threading.Lock — the contended path is off the loop.
+        self._embed_lock = threading.Lock()
+        self._rerank_lock = threading.Lock()
 
     def _get_embedder(self):
         if self._embedder is None:
-            from fastembed import TextEmbedding  # lazy
+            with self._embed_lock:
+                if self._embedder is None:
+                    from fastembed import TextEmbedding  # lazy
 
-            self._embedder = TextEmbedding(model_name=self._embed_model, cache_dir=self._cache_dir)
+                    # First call only: pays the ONNX model download + graph init (cold-load).
+                    with timed("embed.model_load", model=self._embed_model):
+                        self._embedder = TextEmbedding(
+                            model_name=self._embed_model, cache_dir=self._cache_dir
+                        )
         return self._embedder
 
     def _get_reranker(self):
         if self._reranker is None:
-            from fastembed.rerank.cross_encoder import TextCrossEncoder  # lazy
+            with self._rerank_lock:
+                if self._reranker is None:
+                    from fastembed.rerank.cross_encoder import TextCrossEncoder  # lazy
 
-            self._reranker = TextCrossEncoder(
-                model_name=self._rerank_model, cache_dir=self._cache_dir
-            )
+                    # First call only: the ~1GB cross-encoder load — the single largest first-query
+                    # cost, isolated here so it shows up once and never again.
+                    with timed("rerank.model_load", model=self._rerank_model):
+                        self._reranker = TextCrossEncoder(
+                            model_name=self._rerank_model, cache_dir=self._cache_dir
+                        )
         return self._reranker
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

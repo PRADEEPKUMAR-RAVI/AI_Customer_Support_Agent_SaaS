@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import delete, func, select, text as sql_text
 
 from app.core.config import TenantDefaults, get_settings
+from app.core.latency import atimed
 from app.domain.knowledge.chunking import chunk_document
 from app.infra.db.models.knowledge import FileBlob, KbChunk, Source
 from app.infra.db.session import with_tenant
@@ -295,7 +296,8 @@ async def kb_retrieve(
         return KB_NOT_READY
 
     embedder = get_embedder()
-    qvec = (await embedder.embed([query]))[0]
+    async with atimed("kb.embed"):  # first turn also pays the embed model cold-load (see embed.model_load)
+        qvec = (await embedder.embed([query]))[0]
 
     # Both arms retrieve only child chunks (embedding IS NOT NULL — parents are never embedded)
     # from the source's CURRENT serving generation (version == serving_version), so a mid-ingest or
@@ -334,8 +336,10 @@ async def kb_retrieve(
     cand_rows = [row_by_id[cid] for cid in fused_ids]
 
     # Rerank the fused pool (cross-encoder; FakeReranker = lexical overlap in dev). h.index
-    # indexes cand_rows, not the per-arm lists.
-    hits = await embedder.rerank(query, [r.content for r in cand_rows], top_k)
+    # indexes cand_rows, not the per-arm lists. First turn pays the ~1GB rerank model cold-load
+    # (see rerank.model_load) — the dominant first-query cost.
+    async with atimed("kb.rerank", docs=len(cand_rows)):
+        hits = await embedder.rerank(query, [r.content for r in cand_rows], top_k)
     if not hits or hits[0].score < threshold:  # grounding gate: top-1 must clear threshold
         return NO_GROUNDING
     chosen = [(cand_rows[h.index], h.score) for h in hits]

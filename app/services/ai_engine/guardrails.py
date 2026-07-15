@@ -20,6 +20,13 @@ KB_NOT_READY_MSG = (
     "human agent in the meantime?"
 )
 ALREADY_WITH_HUMAN = "A human agent is handling this conversation — they'll reply here shortly."
+# Deterministic ack after capturing a customer's contact email post-escalation ([A15]) — a plain
+# field write, no LLM turn, so there is no grounded fact to fabricate. English for the POC, like
+# the other canned turns here.
+CONTACT_EMAIL_SAVED = (
+    "Thanks — I've saved your email. A human agent will follow up with you there as soon as "
+    "they're available."
+)
 # Deterministic record-state dispute ([A1]) — void warranty / delivered-but-not-received / cancelled-refund.
 DISPUTE_HANDOFF = (
     "I understand this needs closer attention — I'm connecting you with a human agent who can "
@@ -87,9 +94,15 @@ def _record_types_phrase(industry: str) -> str:
     return "your " + ", ".join(names[:-1]) + f" or {names[-1]}"
 
 
-def slot_fill_prompt(industry: str, record_type: str | None) -> str:
-    """Ask the customer for the lookup key + verify value a record lookup needs — built from the
-    industry schema, so it names the right fields per sector and never invents record facts."""
+def slot_fill_prompt(
+    industry: str, record_type: str | None, *, has_key: bool = False, has_verify: bool = False
+) -> str:
+    """Ask ONLY for the record-lookup details still missing, acknowledging whatever the customer
+    already gave — built from the industry schema so it names the right fields per sector and never
+    invents record facts. The wording is code-owned (never model free text): slot-filling is the
+    highest fabrication-risk turn, so keeping the words here means the model can't smuggle a made-up
+    status/ETA into a "question". ``has_key``/``has_verify`` come from the turn metadata (a
+    classification of what the customer supplied), so the ask adapts instead of repeating verbatim."""
     schemas = _schemas_for(industry)
     schema = schemas.get(record_type or "")
     if schema is None and len(schemas) == 1:  # unambiguous industry — use its only record type
@@ -99,11 +112,70 @@ def slot_fill_prompt(industry: str, record_type: str | None) -> str:
             "I can help with that. Which would you like me to look up — "
             f"{_record_types_phrase(industry)} — and could you share the details on it?"
         )
+    rt = record_type.replace("_", " ")
+    keys = " or ".join(_label(k) for k in schema.all_key_fields)
+    verifies = " or ".join(_label(v.field) for v in schema.verify)
+    # Has the key, still needs to prove identity → acknowledge it, ask ONLY for the verify value.
+    if has_key and not has_verify:
+        return (
+            f"Thanks — I've got your {keys}. To confirm it's really you before I pull up the "
+            f"{rt}, could you share the {verifies} on it?"
+        )
+    # Has a verify value but no key → ask ONLY for the key (we'll verify with what they gave).
+    if has_verify and not has_key:
+        return (
+            f"Thanks! To find the right {rt}, could you also share your {keys}? "
+            f"I'll use your {verifies} to confirm it's you."
+        )
+    # Nothing usable yet (or, unexpectedly, both) → ask for both.
+    return (
+        f"Sure — to look up your {rt}, could you share your {keys}, and your {verifies} "
+        "so I can verify it's you?"
+    )
+
+
+def slot_progress_note(industry: str, record_type: str | None, key_value: str) -> str | None:
+    """A code-built instruction fed to the model when a record lookup is mid-flight across turns:
+    it states the lookup KEY the customer already gave and tells the model to complete the lookup
+    (call ``lookup_record``) as soon as the verify value arrives — instead of re-asking for the key
+    it "forgot" between turns. Returns None if we can't resolve the record schema."""
+    schemas = _schemas_for(industry)
+    schema = schemas.get(record_type or "")
+    if schema is None and len(schemas) == 1:
+        record_type, schema = next(iter(schemas.items()))
+    if schema is None or not key_value:
+        return None
+    rt = record_type.replace("_", " ")
+    key_label = _label(schema.key_field)
+    verifies = " or ".join(_label(v.field) for v in schema.verify)
+    return (
+        f"[lookup in progress] The customer is looking up their {rt}. They have ALREADY provided "
+        f"the {key_label}: \"{key_value}\". Do NOT ask for the {key_label} again. You still need a "
+        f"verify value ({verifies}) to confirm identity. As soon as the customer provides it, call "
+        f"lookup_record with record_type=\"{record_type}\", key=\"{key_value}\", and "
+        f"verify_value set to the value they gave."
+    )
+
+
+def lookup_retry_prompt(industry: str, record_type: str | None) -> str:
+    """Neutral, RETRYABLE message when a record lookup returns not_found OR unverified — the SAME
+    wording for both (no enumeration oracle, §4.8.2), so the customer can fix a typo and try again
+    instead of being escalated to a human for a mistyped detail. Code-owned; states no record fact."""
+    schemas = _schemas_for(industry)
+    schema = schemas.get(record_type or "")
+    if schema is None and len(schemas) == 1:
+        record_type, schema = next(iter(schemas.items()))
+    if schema is None:
+        return (
+            "I couldn't match those details. Please double-check them and send them again, "
+            "and I'll take another look."
+        )
+    rt = record_type.replace("_", " ")
     keys = " or ".join(_label(k) for k in schema.all_key_fields)
     verifies = " or ".join(_label(v.field) for v in schema.verify)
     return (
-        f"Sure — to look up your {record_type.replace('_', ' ')}, could you share your {keys}, "
-        f"and your {verifies} so I can verify it's you?"
+        f"I couldn't find your {rt} with those details. Please double-check your {keys} and the "
+        f"{verifies} on it, then send them again and I'll try right away."
     )
 
 

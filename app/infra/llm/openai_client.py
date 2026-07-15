@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.latency import atimed, timed
 from app.infra.llm.base import LLMPort, LLMResult, ToolCall
 
 
@@ -27,7 +28,10 @@ class OpenAIClient(LLMPort):
         if self._client is None:
             from openai import AsyncOpenAI  # lazy import
 
-            self._client = AsyncOpenAI(api_key=self._api_key)
+            # First call only: SDK client construction (cheap vs. the first network round-trip,
+            # but the DNS+TLS handshake is paid on that first create() below).
+            with timed("llm.client_init"):
+                self._client = AsyncOpenAI(api_key=self._api_key)
         return self._client
 
     async def complete(
@@ -53,7 +57,11 @@ class OpenAIClient(LLMPort):
                 "type": "json_schema",
                 "json_schema": {"name": "turn_output", "schema": response_schema, "strict": True},
             }
-        resp = await client.chat.completions.create(**kwargs)
+        # The first create() also pays DNS + TLS + the cold provider connect (~3-18s measured);
+        # later calls are ~1s. `tools`/`schema` flags help correlate slow steps with call shape.
+        async with atimed("llm.request", model=kwargs["model"],
+                          tools=bool(tools), schema=response_schema is not None):
+            resp = await client.chat.completions.create(**kwargs)
         choice = resp.choices[0].message
         tool_calls = [
             ToolCall(id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments or "{}"))

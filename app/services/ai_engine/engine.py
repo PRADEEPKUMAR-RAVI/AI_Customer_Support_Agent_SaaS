@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 
 from app.core.config import TenantDefaults
+from app.core.latency import atimed
 from app.domain.escalation.reasons import EscalationReason
+from app.domain.records.schemas import Industry, get_schema
 from app.domain.ticketing.states import TicketState
 from app.infra.llm.model_router import get_llm
 from app.schemas.records import LookupStatus
@@ -29,8 +32,10 @@ from app.services.ai_engine.guardrails import (
     VERIFY_LOCKED,
     capability_reply,
     delimit_tool_result,
+    lookup_retry_prompt,
     out_of_scope_reply,
     slot_fill_prompt,
+    slot_progress_note,
     smalltalk_reply,
 )
 from app.services.ai_engine.prompts import build_system_prompt
@@ -60,6 +65,10 @@ class TurnResult:
     # PRD §4.2: the verified-lookup identity {type, key} for the ticket's linked-record pointer.
     # Set ONLY when lookup_record returned status=ok this turn (a verified match); else None.
     verified_record: dict | None = None
+    # Cross-turn slot memory {record_type, key_value}: the lookup KEY the customer has given but not
+    # yet verified, so the next turn can finish the lookup instead of re-asking. Never the verify
+    # value (PII). None once verified / not in a lookup flow. Persisted in the AI message.
+    pending_lookup: dict | None = None
 
 
 class _Stalled(Exception):
@@ -87,7 +96,8 @@ _CONVERSATIONAL_TYPES = {"needs_info", "smalltalk", "capability", "out_of_scope"
 
 def _conversational_reply(turn_type: str, cfg: dict, industry: str, meta) -> str:
     if turn_type == "needs_info":
-        return slot_fill_prompt(industry, meta.record_type)
+        return slot_fill_prompt(industry, meta.record_type,
+                                has_key=meta.has_lookup_key, has_verify=meta.has_verify_value)
     if turn_type == "smalltalk":
         return smalltalk_reply(cfg)
     if turn_type == "capability":
@@ -109,6 +119,30 @@ def _summarize_kb(out) -> dict | str:
     if isinstance(out, GroundedResult):
         return {"chunks": [c["content"] for c in out.chunks]}
     return out  # signal string
+
+
+_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+def _record_schema(industry: str, record_type: str | None):
+    """The RecordSchema for (industry, record_type), or None if either is unknown."""
+    try:
+        return get_schema(Industry(industry), record_type or "")
+    except ValueError:
+        return None
+
+
+def _find_email_in(history: list[dict] | None, user_text: str) -> str | None:
+    """Deterministic fallback for an email verify value: scan the customer's messages (this turn
+    first, then earlier) for an email address. Belt-and-suspenders behind the model's extraction so
+    the common retail/order path never depends on the model echoing the value correctly."""
+    texts = [user_text or ""]
+    texts += [m.get("content", "") for m in (history or []) if m.get("role") == "user"]
+    for t in texts:
+        m = _EMAIL_RE.search(t or "")
+        if m:
+            return m.group(0).strip(" .,;:!?)\"'")
+    return None
 
 
 async def _complete_within(llm, messages, *, budget: float, retries: int, **kw):
@@ -136,6 +170,7 @@ async def run_turn(
     human_offer_pending: bool = False,
     established_language: str | None = None,
     history: list[dict] | None = None,
+    pending_lookup: dict | None = None,
 ) -> TurnResult:
     default_lang = cfg.get("default_language", "en")
     supported = cfg.get("supported_languages", ["en"])
@@ -159,6 +194,15 @@ async def run_turn(
     llm = get_llm()
     messages: list[dict] = [{"role": "system", "content": build_system_prompt(cfg, industry=industry)}]
     messages += history or []
+    # Cross-turn slot memory: if a record lookup is mid-flight (the customer gave the key on an
+    # earlier turn), re-state it explicitly so the model completes the lookup as soon as the verify
+    # value arrives — it otherwise doesn't reliably stitch a key from an earlier turn to the verify
+    # value given now, and falls back to re-asking for everything.
+    if pending_lookup and pending_lookup.get("key_value"):
+        _note = slot_progress_note(industry, pending_lookup.get("record_type"),
+                                   str(pending_lookup["key_value"]))
+        if _note:
+            messages.append({"role": "system", "content": _note})
     messages.append({"role": "user", "content": user_text})
 
     grounded = None
@@ -186,9 +230,10 @@ async def run_turn(
     # Bounded tool loop ([IMP-ENG-2]); +1 so a final answer pass follows the last allowed tool.
     # No response_schema here — the loop only calls tools / produces the answer text ([IMP-ENG-1]).
     try:
-        for _ in range(max_calls + 1):
-            res = await _complete_within(llm, messages, budget=budget, retries=stall_retries,
-                                         tools=TOOL_SPECS, temperature=0)
+        for _step in range(max_calls + 1):
+            async with atimed("engine.llm.step", step=_step + 1):
+                res = await _complete_within(llm, messages, budget=budget, retries=stall_retries,
+                                             tools=TOOL_SPECS, temperature=0)
             p_tok += res.prompt_tokens
             c_tok += res.completion_tokens
             model_name = res.model or model_name
@@ -209,7 +254,8 @@ async def run_turn(
                     tool_calls += 1
                     if tc.name == "kb_retrieve":
                         stages.append("retrieving")
-                        out = await kb_retrieve_tool(session, tc.arguments, threshold=threshold)
+                        async with atimed("engine.tool.kb_retrieve"):
+                            out = await kb_retrieve_tool(session, tc.arguments, threshold=threshold)
                         if isinstance(out, GroundedResult):
                             grounded = out
                         else:
@@ -217,10 +263,11 @@ async def run_turn(
                         payload = _summarize_kb(out)
                     elif tc.name == "lookup_record":
                         stages.append("looking_up")
-                        record_result = await lookup_record_tool(
-                            session, tc.arguments, industry=industry,
-                            tenant_id=tenant_id, user_text=user_text,
-                        )
+                        async with atimed("engine.tool.lookup_record"):
+                            record_result = await lookup_record_tool(
+                                session, tc.arguments, industry=industry,
+                                tenant_id=tenant_id, user_text=user_text,
+                            )
                         # PRD §4.2: capture the verified identity for the ticket's linked-record
                         # pointer — set ONLY on a verified match (status=ok), never on
                         # not_found/unverified/rate_limited (a merely-mentioned id leaves it null).
@@ -254,10 +301,11 @@ async def run_turn(
     meta_ok = False
     for _ in range(2):  # 1 try + 1 retry
         try:
-            meta_res = await _complete_within(
-                llm, messages + [{"role": "assistant", "content": model_answer}],
-                budget=budget, retries=0, response_schema=TURN_METADATA_SCHEMA, temperature=0,
-            )
+            async with atimed("engine.llm.meta"):
+                meta_res = await _complete_within(
+                    llm, messages + [{"role": "assistant", "content": model_answer}],
+                    budget=budget, retries=0, response_schema=TURN_METADATA_SCHEMA, temperature=0,
+                )
             p_tok += meta_res.prompt_tokens
             c_tok += meta_res.completion_tokens
             if meta_res.structured:
@@ -266,6 +314,41 @@ async def run_turn(
                 break
         except Exception:  # noqa: BLE001 — TimeoutError/validation/parse all retry then fail safe
             continue
+
+    # ── Engine-driven record lookup (reliability fix) ─────────────────────────────────────────
+    # Multi-turn lookups used to stall because completing them depended on the MODEL choosing to
+    # call lookup_record once it had the key + verify value — which it does unreliably (it would
+    # collect the id on one turn and the email on the next, then re-ask instead of looking up). Now
+    # the model only EXTRACTS the values (lookup_key_value / verify_value, over the whole
+    # conversation — a task it's reliable at), and the ENGINE performs the lookup here in code as
+    # soon as both are present. Skipped if the model already looked up this turn (happy path kept),
+    # or if there's no valid record type. Verification still runs in code inside lookup_record_tool.
+    # record_type/key fall back to the remembered slot state, so once the key was captured on an
+    # earlier turn the verify turn needs NOTHING new from the model (record_type + key from memory,
+    # email from the message) — the model can whiff entirely and the lookup still completes.
+    _rec_type = model_meta.record_type or (pending_lookup or {}).get("record_type")
+    if record_result is None and _rec_type:
+        schema = _record_schema(industry, _rec_type)
+        if schema is not None:
+            key_val = model_meta.lookup_key_value or (pending_lookup or {}).get("key_value")
+            verify_val = model_meta.verify_value
+            if not verify_val and any(v.field == "email" for v in schema.verify):
+                verify_val = _find_email_in(history, user_text)  # deterministic email fallback
+            if key_val and verify_val:
+                async with atimed("engine.tool.lookup_record"):
+                    record_result = await lookup_record_tool(
+                        session,
+                        {"record_type": _rec_type, "key": str(key_val),
+                         "verify_value": str(verify_val)},
+                        industry=industry, tenant_id=tenant_id, user_text=user_text,
+                    )
+                tool_calls += 1
+                if record_result.get("status") == LookupStatus.OK.value:
+                    verified_record = {"type": _rec_type, "key": str(key_val)}
+                # The model's pre-lookup text isn't grounded on the record, and a lookup ran, so this
+                # is no longer a slot-fill turn — let decide_outcome render from the verified record.
+                model_answer = ""
+                model_meta.turn_type = "answer"
 
     outcome = decide_outcome(
         grounded=grounded, kb_signal=kb_signal, model_answer=model_answer,
@@ -313,6 +396,15 @@ async def run_turn(
             and not (record_result and record_result.get("status") == LookupStatus.OK.value)):
         escalate, reason, answer_text = True, EscalationReason.TIMEOUT, ENGINE_GUARD_HANDOFF
 
+    # A record lookup that returned not_found / unverified is RETRYABLE, not a dead end: give the
+    # customer the SAME neutral message for both (no enumeration oracle, §4.8.2) so they can correct
+    # a typo and try again, instead of being escalated to a human for a mistyped detail. The durable
+    # attempt counter still escalates (rate_limited, handled above) once the cap is hit.
+    _rec_status = record_result.get("status") if record_result else None
+    if (_rec_status in (LookupStatus.NOT_FOUND.value, LookupStatus.UNVERIFIED.value)
+            and not grounded_answer and reason in (None, EscalationReason.NO_GROUNDING)):
+        escalate, reason, answer_text = False, None, lookup_retry_prompt(industry, _rec_type)
+
     # [A2] Proactive human offer. Instead of hard-escalating the FIRST ungrounded turn, offer a
     # human and remember it (offered_human). If a prior turn already offered, a typed "yes" now
     # connects them (reason=proactive); otherwise the (still-ungrounded) turn hands off as usual.
@@ -332,7 +424,15 @@ async def run_turn(
         # above (guard: reason is NO_GROUNDING). The talk-to-human button is always available.
         escalate, reason = False, None
         if model_meta.turn_type == "needs_info":
-            answer_text = slot_fill_prompt(industry, model_meta.record_type)
+            # Treat the key as "have it" if EITHER the model saw it this turn OR we remembered it
+            # from an earlier turn, so we ask only for the still-missing verify value.
+            _pending_key = (pending_lookup or {}).get("key_value")
+            answer_text = slot_fill_prompt(
+                industry,
+                model_meta.record_type or (pending_lookup or {}).get("record_type"),
+                has_key=model_meta.has_lookup_key or bool(_pending_key),
+                has_verify=model_meta.has_verify_value,
+            )
         else:
             answer_text = model_answer.strip() or _conversational_reply(
                 model_meta.turn_type, cfg, industry, model_meta
@@ -347,6 +447,16 @@ async def run_turn(
     detected = model_meta.detected_language or established_language or default_lang
     if detected not in supported:
         detected = default_lang
+
+    # Cross-turn slot memory to carry into the next turn: keep the lookup KEY (never the verify
+    # value — PII) so a follow-up that supplies the verify value can complete the lookup. Cleared
+    # once verified, on escalation, or when the turn isn't part of a record-lookup flow.
+    pending_lookup_out: dict | None = None
+    if not verified_record and not escalate and model_meta.turn_type in ("needs_info", "answer"):
+        _rt = model_meta.record_type or (pending_lookup or {}).get("record_type")
+        _kv = model_meta.lookup_key_value or (pending_lookup or {}).get("key_value")
+        if _rt and _kv:
+            pending_lookup_out = {"record_type": _rt, "key_value": str(_kv)}
 
     return TurnResult(
         answer=answer_text,
@@ -366,4 +476,5 @@ async def run_turn(
         model=model_name,
         offered_human=offered_human,
         verified_record=verified_record,
+        pending_lookup=pending_lookup_out,
     )

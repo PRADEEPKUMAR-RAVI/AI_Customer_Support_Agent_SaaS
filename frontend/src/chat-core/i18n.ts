@@ -33,6 +33,15 @@ export interface ChromeStrings {
   retry: string;
   errorGeneric: string;
   status: Record<StatusStage, string>;
+  // Added for the redesigned panel — all chrome-only (no logic/contract change).
+  aiAgent: string; // subtle per-message "this reply is from the AI" caption (mixed transcripts)
+  agentLabel: string; // a human support agent's label
+  handoffSubtitle: string; // header subtitle once a human has taken over
+  sources: string; // heading above citation cards
+  copy: string;
+  copied: string;
+  jumpToLatest: string; // scroll-to-bottom affordance
+  connectingHuman: string; // centered system note when a turn escalates
 }
 
 const EN: ChromeStrings = {
@@ -56,6 +65,14 @@ const EN: ChromeStrings = {
     generating: "Writing a reply…",
     waiting: "One moment…",
   },
+  aiAgent: "AI Agent",
+  agentLabel: "Support agent",
+  handoffSubtitle: "A team member is helping you",
+  sources: "Sources",
+  copy: "Copy",
+  copied: "Copied",
+  jumpToLatest: "Jump to latest",
+  connectingHuman: "Connecting you to a person…",
 };
 
 const ES: ChromeStrings = {
@@ -79,6 +96,14 @@ const ES: ChromeStrings = {
     generating: "Escribiendo una respuesta…",
     waiting: "Un momento…",
   },
+  aiAgent: "Agente IA",
+  agentLabel: "Agente de soporte",
+  handoffSubtitle: "Un miembro del equipo te está ayudando",
+  sources: "Fuentes",
+  copy: "Copiar",
+  copied: "Copiado",
+  jumpToLatest: "Ir al último",
+  connectingHuman: "Conectándote con una persona…",
 };
 
 const TABLE: Record<string, ChromeStrings> = { en: EN, es: ES };

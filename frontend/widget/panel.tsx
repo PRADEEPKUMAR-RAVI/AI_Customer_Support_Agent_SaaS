@@ -58,7 +58,7 @@ const WIDGET_CSS = `
 @keyframes cswfadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes cswbounce { 0%,80%,100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
 /* Markdown for AI answers — mirror of the .chat-md rules in src/styles/globals.css. */
-.chat-md { font-size: 15px; line-height: 1.6; }
+.chat-md { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
 .chat-md > :first-child { margin-top: 0; }
 .chat-md > :last-child { margin-bottom: 0; }
 .chat-md p { margin: 0 0 0.6em; }
@@ -75,8 +75,25 @@ const WIDGET_CSS = `
 .chat-md h1 { font-size: 1.15em; }
 .chat-md h2, .chat-md h3 { font-size: 1.05em; }
 .chat-md blockquote { border-inline-start: 3px solid var(--border); padding-inline-start: 12px; color: var(--muted-foreground); margin: 0.5em 0; }
-.chat-md table { border-collapse: collapse; font-size: 0.92em; margin: 0.5em 0; }
+.chat-md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.92em; margin: 0.5em 0; }
 .chat-md th, .chat-md td { border: 1px solid var(--border); padding: 4px 8px; text-align: start; }
+.chat-md th { background: var(--secondary); font-weight: 600; }
+/* Chat interactive states — MIRROR of the .csw-root block in src/styles/globals.css. Keep in sync. */
+.csw-root { --csw-focus: color-mix(in srgb, var(--primary, #4f46e5) 55%, transparent); }
+.csw-root .csw-chip, .csw-root .csw-cite, .csw-root .csw-iconbtn, .csw-root .csw-send, .csw-root .csw-ghost, .csw-root .csw-jump {
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 140ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease, opacity 150ms ease;
+}
+.csw-root .csw-chip:hover { transform: translateY(-1px); border-color: var(--primary, #4f46e5); }
+.csw-root .csw-ghost:hover { transform: translateY(-1px); background: var(--secondary, #f1f5f9); }
+.csw-root .csw-iconbtn:hover { background: var(--secondary, #f1f5f9); }
+.csw-root .csw-cite { box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground, #0f172a) 6%, transparent); }
+.csw-root .csw-cite:hover { transform: translateY(-1px); box-shadow: 0 4px 12px color-mix(in oklab, var(--foreground, #0f172a) 12%, transparent); }
+.csw-root .csw-chip:active, .csw-root .csw-ghost:active { transform: scale(0.97); }
+.csw-root .csw-send:active { transform: scale(0.92); }
+.csw-root .csw-jump:hover { background: var(--secondary, #f1f5f9); box-shadow: 0 6px 18px color-mix(in oklab, var(--foreground, #0f172a) 16%, transparent); }
+.csw-root .csw-composer:focus-within { border-color: var(--primary, #4f46e5); box-shadow: 0 0 0 3px var(--csw-focus); }
+.csw-root :focus-visible { outline: 2px solid var(--csw-focus); outline-offset: 2px; }
+.csw-root :focus:not(:focus-visible) { outline: none; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

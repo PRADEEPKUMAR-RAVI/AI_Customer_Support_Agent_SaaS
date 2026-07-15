@@ -18,7 +18,13 @@ from app.infra.db.models.conversation import Conversation
 from app.infra.db.models.tenant import Tenant
 from app.infra.db.models.ticket import ResolutionSummary, Ticket
 from app.infra.db.session import with_tenant
-from app.services.ticket_service import get_or_create_ticket, resolve_ticket, start_ai_handling
+from app.services.ticket_service import (
+    claim_ticket,
+    escalate_ticket,
+    get_or_create_ticket,
+    resolve_ticket,
+    start_ai_handling,
+)
 
 pytestmark = pytest.mark.rls
 
@@ -55,6 +61,35 @@ async def test_get_or_create_ticket_is_idempotent():
             await session.execute(select(Ticket).where(Ticket.conversation_id == conversation_id))
         ).scalars().all()
         assert len(rows) == 1
+
+
+async def test_ai_turn_never_unescalates_ticket():
+    """[IMP-TKT-1] A normal AI turn calls start_ai_handling every time; its guarded CAS
+    (expected_from=new) is a NO-OP on any non-new state, so an escalated or claimed ticket keeps
+    its status. Regression: the AI answering while escalated must NOT revert it to ai_handling."""
+    tenant_id, conversation_id = await _make_tenant_and_conversation()
+
+    async with with_tenant(tenant_id) as session:
+        ticket = await get_or_create_ticket(session, conversation_id=conversation_id)
+        ticket_id = ticket.id
+        await start_ai_handling(session, ticket_id=ticket_id)  # new -> ai_handling
+        await escalate_ticket(session, ticket_id=ticket_id, actor=Actor.AI, priority="normal")
+
+    # Escalated: a subsequent AI turn's start_ai_handling is a no-op → stays escalated.
+    async with with_tenant(tenant_id) as session:
+        assert (await start_ai_handling(session, ticket_id=ticket_id)).applied is False
+    async with with_tenant(tenant_id) as session:
+        t = (await session.execute(select(Ticket).where(Ticket.id == ticket_id))).scalar_one()
+        assert t.state == "escalated"
+
+    # Claimed (with_agent): same — an AI turn cannot pull it back to ai_handling.
+    async with with_tenant(tenant_id) as session:
+        await claim_ticket(session, ticket_id=ticket_id, agent_staff_id=uuid.uuid4())
+    async with with_tenant(tenant_id) as session:
+        assert (await start_ai_handling(session, ticket_id=ticket_id)).applied is False
+    async with with_tenant(tenant_id) as session:
+        t = (await session.execute(select(Ticket).where(Ticket.id == ticket_id))).scalar_one()
+        assert t.state == "with_agent"
 
 
 async def test_new_to_ai_handling_to_resolved_writes_summary_stub():
