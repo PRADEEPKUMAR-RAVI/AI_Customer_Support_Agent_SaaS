@@ -13,6 +13,7 @@ import csv
 import io
 import json
 import uuid
+from urllib.parse import quote
 
 from sqlalchemy import delete, or_, select
 
@@ -29,7 +30,7 @@ from app.domain.records.schemas import (
 )
 from app.infra.connectors.api_resolver import ApiResolver
 from app.infra.connectors.base import NOT_FOUND, ConnectorError, RawRecord, Resolver, _NotFound
-from app.infra.connectors.db_resolver import DbResolver
+from app.infra.connectors.db_resolver import DbResolver, normalize_pg_dsn
 from app.infra.db.models.records import Connector, RecordDataset, RecordRow
 from app.infra.db.models.tenant import Tenant
 from app.infra.db.session import with_tenant
@@ -70,11 +71,76 @@ class UploadResolver(Resolver):
             return dict(row.data) if row is not None else NOT_FOUND
 
 
+def _build_db_dsn(cfg: dict, secret: str) -> str:
+    """Build a normalized async Postgres DSN. Guided mode (``cfg`` has ``host``) assembles the DSN
+    from the non-secret parts + the secret (password); otherwise the secret IS the full DSN. Either
+    way it's normalized to the async driver ([T4]: Postgres only)."""
+    if cfg.get("host"):
+        user = quote(str(cfg.get("username", "")), safe="")
+        pw = quote(secret, safe="")
+        auth = f"{user}:{pw}@" if (user or pw) else ""
+        port = cfg.get("port") or 5432
+        dsn = f"postgresql://{auth}{cfg['host']}:{port}/{cfg.get('database', '')}"
+    else:
+        dsn = secret
+    return normalize_pg_dsn(dsn)
+
+
+def build_resolver(
+    *,
+    source_type: str,
+    config: dict,
+    field_map: dict,
+    secret: str,
+    connector_id: str | None = None,
+    version: int = 1,
+) -> Resolver:
+    """Construct a live resolver from connector config + the decrypted secret. Shared by
+    ``get_resolver`` (saved connectors) and the test-before-save ``validate`` endpoint (unsaved
+    config, ``connector_id=None``). Reads the config shape ``{dialect, host/port/database/username,
+    query_template}`` (db) or ``{base_url, method, path_template, auth, response_path}`` (api).
+    Backward compatible with legacy ``{auth_header, auth_scheme}`` api connectors."""
+    if source_type == "db":
+        return DbResolver(
+            connector_id=connector_id or str(uuid.uuid4()),
+            version=version,
+            dsn=_build_db_dsn(config, secret),
+            query_template=config["query_template"],
+            field_map=field_map,
+        )
+    if source_type == "api":
+        common = dict(
+            base_url=config["base_url"],
+            path_template=config.get("path_template", "/{key}"),
+            field_map=field_map,
+            method=config.get("method", "GET"),
+            response_path=config.get("response_path"),
+            connector_id=connector_id,
+            version=version,
+        )
+        auth = config.get("auth")
+        if auth:
+            return ApiResolver(auth={**auth, "secret": secret}, **common)
+        return ApiResolver(  # legacy single-header auth
+            auth_header=config.get("auth_header"),
+            auth_scheme=config.get("auth_scheme"),
+            auth_secret=secret,
+            **common,
+        )
+    return UploadResolver()
+
+
 async def get_resolver(session, tenant_id: str, record_type: str) -> Resolver:
-    """Dispatch to the resolver backing this record_type: a configured Connector (db/api) if one
-    exists, else the uploaded dataset. Credentials are decrypted here (AAD-bound to tenant+id)."""
+    """Dispatch to the resolver backing this record_type: the ENABLED Connector (db/api) if one
+    exists, else the uploaded dataset. A record_type may have many connectors but at most one is
+    enabled (uq_connector_active_per_type), so this is still one-or-none; all paused -> the upload
+    dataset. Credentials are decrypted here (AAD-bound to tenant+id)."""
     connector = (
-        await session.execute(select(Connector).where(Connector.record_type == record_type))
+        await session.execute(
+            select(Connector).where(
+                Connector.record_type == record_type, Connector.enabled.is_(True)
+            )
+        )
     ).scalar_one_or_none()
     if connector is None:
         return UploadResolver()
@@ -84,26 +150,14 @@ async def get_resolver(session, tenant_id: str, record_type: str) -> Resolver:
         tenant_id=str(tenant_id),
         connector_id=str(connector.id),
     )
-    if connector.source_type == "db":
-        return DbResolver(
-            connector_id=str(connector.id),
-            version=connector.version,
-            dsn=secret,
-            query_template=connector.config["query_template"],
-            field_map=connector.field_map,
-        )
-    if connector.source_type == "api":
-        cfg = connector.config
-        return ApiResolver(
-            base_url=cfg["base_url"],
-            path_template=cfg.get("path_template", "/{key}"),
-            field_map=connector.field_map,
-            method=cfg.get("method", "GET"),
-            auth_header=cfg.get("auth_header"),
-            auth_scheme=cfg.get("auth_scheme"),
-            auth_secret=secret,
-        )
-    return UploadResolver()
+    return build_resolver(
+        source_type=connector.source_type,
+        config=connector.config,
+        field_map=connector.field_map,
+        secret=secret,
+        connector_id=str(connector.id),
+        version=connector.version,
+    )
 
 
 async def lookup_record(

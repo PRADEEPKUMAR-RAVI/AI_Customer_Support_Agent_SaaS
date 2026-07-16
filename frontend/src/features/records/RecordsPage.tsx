@@ -14,7 +14,7 @@ import { useAuth } from "@/app/providers";
 import { hasPermission } from "@/lib/rbac";
 
 import { getRecordsSchema, listDatasets } from "./api";
-import { ConnectorForm } from "./ConnectorForm";
+import { ConnectorList } from "./ConnectorList";
 import { RecordTypeCard } from "./RecordTypeCard";
 
 export function RecordsPage() {
@@ -102,7 +102,7 @@ export function RecordsPage() {
                 description="Connectors map a live source onto a record template. Configure a record type first."
               />
             ) : (
-              <ConnectorForm schemas={schemas} />
+              <ConnectorList schemas={schemas} />
             )}
           </TabsContent>
         </Tabs>

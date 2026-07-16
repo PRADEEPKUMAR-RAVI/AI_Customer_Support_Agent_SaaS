@@ -24,6 +24,27 @@ from app.infra.connectors.base import NOT_FOUND, ConnectorError, RawRecord, _Not
 _ENGINE_CACHE: dict[tuple[str, int], AsyncEngine] = {}
 
 
+def normalize_pg_dsn(dsn: str) -> str:
+    """Force a Postgres DSN onto the async driver ([T4]: Postgres only). ``postgresql://…`` (or any
+    ``+driver``) -> ``postgresql+asyncpg://…``; a non-Postgres scheme is rejected so a mistyped
+    ``mysql://`` fails clearly at config time instead of deep in SQLAlchemy."""
+    scheme, sep, rest = dsn.strip().partition("://")
+    if not sep:
+        raise ConnectorError("connection", "invalid DSN (missing scheme)")
+    if scheme.split("+", 1)[0] not in ("postgresql", "postgres"):
+        raise ConnectorError("connection", "only PostgreSQL sources are supported for now")
+    return f"postgresql+asyncpg://{rest}"
+
+
+async def dispose_engine(connector_id: str) -> None:
+    """Best-effort disposal of any cached engine(s) for a connector (on delete). Version-key
+    invalidation already keeps lookups correct; this frees the pool promptly."""
+    for stale in [k for k in _ENGINE_CACHE if k[0] == connector_id]:
+        engine = _ENGINE_CACHE.pop(stale, None)
+        if engine is not None:
+            await engine.dispose()
+
+
 def _validate_db_host(dsn: str) -> None:
     parts = urlsplit(dsn)
     host, port = parts.hostname, parts.port or 5432

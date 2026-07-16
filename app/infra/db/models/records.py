@@ -14,8 +14,9 @@ including the verify field) rather than a separate table — sufficient for the 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,13 +59,29 @@ class Connector(Base, TenantMixin, TimestampMixin):
 
     __tablename__ = "connector"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "record_type", name="uq_connector_tenant_type"),
+        # Many connectors may back one (tenant, record_type); the DB guarantees at most ONE is
+        # ENABLED at a time — the single source of truth the engine grounds/verifies against.
+        # Replaces the old uq_connector_tenant_type "one connector per type" constraint. All
+        # disabled -> the record_type falls back to its uploaded dataset.
+        Index(
+            "uq_connector_active_per_type",
+            "tenant_id",
+            "record_type",
+            unique=True,
+            postgresql_where=text("enabled"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     record_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source_type: Mapped[str] = mapped_column(String(8), nullable=False)  # "db" | "api"
+    # At most one enabled per (tenant, record_type) — enforced by uq_connector_active_per_type.
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     encrypted_credentials: Mapped[str] = mapped_column(Text, nullable=False)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     field_map: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # On-demand health (written only by the test/validate endpoints, never the customer read path).
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_error: Mapped[str | None] = mapped_column(String(300), nullable=True)

@@ -93,9 +93,8 @@ async def _dispose_engine_between_tests():
 async def test_db_run_query_binds_key_and_maps_columns():
     # Use the non-RLS `tenant` table as a stand-in "external" table to prove parameterized binding
     # + column->field mapping without any DDL.
-    from app.infra.db.engine import engine
+    from app.infra.db.engine import SessionLocal, engine
     from app.infra.db.models.tenant import Tenant
-    from app.infra.db.session import SessionLocal
 
     name = f"dbconn-{uuid.uuid4().hex[:8]}"
     async with SessionLocal() as session:
@@ -117,9 +116,10 @@ async def test_db_run_query_binds_key_and_maps_columns():
 @pytest.mark.rls
 async def test_get_resolver_decrypts_connector_credentials():
     from app.core.security import encrypt_credential
+    from app.infra.db.engine import SessionLocal
     from app.infra.db.models.records import Connector
     from app.infra.db.models.tenant import Tenant
-    from app.infra.db.session import SessionLocal, with_tenant
+    from app.infra.db.session import with_tenant
     from app.services.record_service import get_resolver
 
     dsn = "postgresql+asyncpg://readonly:secret@db.example.com:5432/shop"

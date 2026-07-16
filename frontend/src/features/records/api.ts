@@ -1,7 +1,7 @@
 /** FE-Records API wrappers over the typed client. */
 
 import type { components } from "../../api/generated/schema";
-import { api } from "../../lib/api";
+import { api, unwrap } from "../../lib/api";
 
 export type RecordSchemaOut = components["schemas"]["RecordSchemaOut"];
 export type DatasetOut = components["schemas"]["DatasetOut"];
@@ -9,6 +9,13 @@ export type DatasetUploadReport = components["schemas"]["DatasetUploadReport"];
 export type ConnectorIn = components["schemas"]["ConnectorIn"];
 export type ConnectorOut = components["schemas"]["ConnectorOut"];
 export type ConnectorTestReport = components["schemas"]["ConnectorTestReport"];
+export type ConnectorListItem = components["schemas"]["ConnectorListItem"];
+export type ConnectorDetail = components["schemas"]["ConnectorDetail"];
+export type ConnectorPatchIn = components["schemas"]["ConnectorPatchIn"];
+export type ConnectorValidateIn = components["schemas"]["ConnectorValidateIn"];
+
+/** react-query key for the connector management list (distinct from datasets/schema keys). */
+export const CONNECTORS_KEY = ["records", "connectors"] as const;
 
 export async function getRecordsSchema(): Promise<RecordSchemaOut[]> {
   const { data, error } = await api.GET("/api/v1/records/schema", {});
@@ -56,4 +63,42 @@ export async function testConnector(connectorId: string, testKey: string): Promi
   });
   if (error) throw new Error("Connector test failed");
   return data!;
+}
+
+export async function listConnectors(): Promise<ConnectorListItem[]> {
+  return unwrap<ConnectorListItem[]>(await api.GET("/api/v1/records/connectors", {}));
+}
+
+export async function getConnector(connectorId: string): Promise<ConnectorDetail> {
+  return unwrap<ConnectorDetail>(
+    await api.GET("/api/v1/records/connectors/{connector_id}", {
+      params: { path: { connector_id: connectorId } },
+    })
+  );
+}
+
+export async function patchConnector(
+  connectorId: string,
+  body: ConnectorPatchIn
+): Promise<ConnectorOut> {
+  return unwrap<ConnectorOut>(
+    await api.PATCH("/api/v1/records/connectors/{connector_id}", {
+      params: { path: { connector_id: connectorId } },
+      body,
+    })
+  );
+}
+
+export async function deleteConnector(connectorId: string): Promise<void> {
+  const { error } = await api.DELETE("/api/v1/records/connectors/{connector_id}", {
+    params: { path: { connector_id: connectorId } },
+  });
+  if (error) throw new Error("Connector delete failed");
+}
+
+/** Test-before-save: run one lookup against unsaved config without persisting. */
+export async function validateConnector(body: ConnectorValidateIn): Promise<ConnectorTestReport> {
+  return unwrap<ConnectorTestReport>(
+    await api.POST("/api/v1/records/connectors/validate", { body })
+  );
 }
