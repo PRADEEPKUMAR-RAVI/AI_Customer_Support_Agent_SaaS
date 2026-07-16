@@ -60,7 +60,7 @@ export function RecordTypeCard({
         if (inputRef.current) inputRef.current.value = "";
         toast.success(`Imported ${(r.inserted ?? 0).toLocaleString()} rows into ${label}.`);
       } else {
-        toast.error("Upload rejected — see the validation report.");
+        toast.error("Upload rejected. See the validation report.");
       }
     },
     onError: (e) => toast.error((e as Error).message),
@@ -112,7 +112,7 @@ export function RecordTypeCard({
 
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">
-            Verify {verifyFields.length > 0 ? `— ${verifyFields.join(" or ")}` : "— none"}
+            Verify: {verifyFields.length > 0 ? verifyFields.join(" or ") : "none"}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {returnedFields.length > 0 ? (

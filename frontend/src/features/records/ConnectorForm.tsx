@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { ReportBanner } from "@/components/report-banner";
 
 import {
   createConnector,
@@ -63,22 +63,7 @@ function titleCase(v: string): string {
 
 function TestResult({ report }: { report: ConnectorTestReport }) {
   return (
-    <div
-      className={cn(
-        "space-y-2 rounded-lg border p-3 text-sm",
-        report.ok ? "border-success/30 bg-success/10" : "border-destructive/30 bg-destructive/5"
-      )}
-    >
-      <div className="flex items-center gap-2">
-        {report.ok ? (
-          <CheckCircle2 className="size-4 text-success" />
-        ) : (
-          <XCircle className="size-4 text-destructive" />
-        )}
-        <span className={cn("font-medium", report.ok ? "text-success" : "text-destructive")}>
-          {report.ok ? "Test passed" : "Test failed"}
-        </span>
-      </div>
+    <ReportBanner ok={report.ok} heading={report.ok ? "Test passed" : "Test failed"}>
       <ul className="space-y-1 pl-6 text-xs text-muted-foreground">
         <li className="flex items-center gap-1.5">
           {report.found ? (
@@ -100,7 +85,7 @@ function TestResult({ report }: { report: ConnectorTestReport }) {
         ) : null}
       </ul>
       {report.error ? <p className="pl-6 text-xs text-destructive">{report.error}</p> : null}
-    </div>
+    </ReportBanner>
   );
 }
 

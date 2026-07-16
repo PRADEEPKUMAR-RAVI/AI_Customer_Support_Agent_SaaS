@@ -8,29 +8,51 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Design tokens — semantic, OKLCH. Light = :root, dark = .dark.
-   Primary = Indigo→Violet "modern AI" (#4f46e5 / #6366f1). Neutral = Slate.
-   All text/interactive pairs verified WCAG AA. Per-tenant branding overrides
-   --primary / --primary-foreground / --ring on a [data-tenant] scope.
+   Design tokens — semantic. Light = :root, dark = .dark.
+   One brand family, exact client hex, kept literal (not approximated to OKLCH)
+   so the colors stay pixel-true to spec. Everything else derives from these
+   four via color-mix — there is no second hue anywhere in the product chrome:
+     --brand-900 #1B3C53  darkest   → primary actions, nav, focus rings
+     --brand-700 #234C6A  dark      → informational accents
+     --brand-500 #456882  mid       → AI/automation highlights, muted text
+     --brand-200 #E3E3E3  lightest  → canvases, subtle fills, text-on-dark
+   The two exceptions are --success/--destructive (green/red) — status needs a
+   hue-independent signal — and the data-viz --chart-* set, which stays its own
+   validated, colorblind-checked palette (a monochrome ramp can't carry 8
+   distinguishable categorical series). All text/interactive pairs verified
+   WCAG AA. Per-tenant branding overrides --primary / --primary-foreground /
+   --ring on a [data-tenant] scope.
    ───────────────────────────────────────────────────────────────────────────── */
 :root {
   --radius: 0.5rem;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.02 265); /* slate-950 */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.02 265);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.02 265);
+  --brand-900: #1b3c53;
+  --brand-700: #234c6a;
+  --brand-500: #456882;
+  --brand-200: #e3e3e3;
 
-  --primary: oklch(0.511 0.262 277); /* indigo-600 #4f46e5 */
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.968 0.007 248); /* slate-100 */
-  --secondary-foreground: oklch(0.208 0.03 265);
-  --muted: oklch(0.968 0.007 248);
-  --muted-foreground: oklch(0.554 0.03 257); /* slate-500, 4.76:1 on white */
-  --accent: oklch(0.961 0.017 272); /* indigo-50 tint #eef2ff-ish */
-  --accent-foreground: oklch(0.398 0.18 277); /* indigo-700 */
+  --background: color-mix(in oklab, var(--brand-200) 16%, white); /* refined off-white, a whisper of the brand gray */
+  --foreground: var(--brand-900);
+  --card: oklch(1 0 0); /* white — cards lift off the canvas */
+  --card-foreground: var(--brand-900);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--brand-900);
+
+  --primary: var(--brand-900);
+  --primary-foreground: var(--brand-200);
+  --secondary: var(--brand-200);
+  --secondary-foreground: var(--brand-900);
+  --muted: var(--brand-200);
+  --muted-foreground: var(--brand-500);
+  --accent: color-mix(in oklab, var(--brand-500) 14%, white);
+  --accent-foreground: var(--brand-900);
+
+  /* Reserved for flagging AI/automated features (chat bubbles, "AI handling"
+     states, the resolution-flow signature on signup) — a lighter step of the
+     same brand family, never the button color, so it never reads as "click
+     here." */
+  --ai-accent: var(--brand-500);
+  --ai-accent-foreground: oklch(1 0 0);
 
   --destructive: oklch(0.577 0.245 27.3); /* red-600 */
   --destructive-foreground: oklch(0.985 0 0);
@@ -38,23 +60,24 @@
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.769 0.16 70); /* amber-500 — needs dark text */
   --warning-foreground: oklch(0.279 0.03 265);
-  --info: oklch(0.546 0.22 262); /* blue-600 */
-  --info-foreground: oklch(0.985 0 0);
+  --info: var(--brand-700);
+  --info-foreground: var(--brand-200);
 
-  --border: oklch(0.929 0.01 255); /* slate-200 */
-  --input: oklch(0.929 0.01 255);
-  --ring: oklch(0.511 0.262 277); /* indigo focus ring */
+  --border: color-mix(in oklab, var(--brand-500) 30%, white);
+  --input: color-mix(in oklab, var(--brand-500) 30%, white);
+  --ring: var(--brand-900);
 
-  --sidebar: oklch(0.985 0.002 248);
-  --sidebar-foreground: oklch(0.129 0.02 265);
-  --sidebar-primary: oklch(0.511 0.262 277);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.961 0.017 272);
-  --sidebar-accent-foreground: oklch(0.398 0.18 277);
-  --sidebar-border: oklch(0.929 0.01 255);
-  --sidebar-ring: oklch(0.511 0.262 277);
+  --sidebar: oklch(1 0 0); /* white — a raised rail against the gray canvas */
+  --sidebar-foreground: var(--brand-900);
+  --sidebar-primary: var(--brand-900);
+  --sidebar-primary-foreground: var(--brand-200);
+  --sidebar-accent: color-mix(in oklab, var(--brand-500) 14%, white);
+  --sidebar-accent-foreground: var(--brand-900);
+  --sidebar-border: color-mix(in oklab, var(--brand-500) 30%, white);
+  --sidebar-ring: var(--brand-900);
 
-  /* Data-viz categorical (validated, colorblind-checked) — light surface. */
+  /* Data-viz categorical (validated, colorblind-checked) — light surface. Kept
+     out of the brand ramp on purpose — see header note. */
   --chart-1: #2a78d6;
   --chart-2: #1baf7a;
   --chart-3: #eda100;
@@ -66,21 +89,29 @@
 }
 
 .dark {
-  --background: oklch(0.129 0.02 265); /* slate-950 */
-  --foreground: oklch(0.984 0.003 248); /* slate-50 */
-  --card: oklch(0.208 0.03 265); /* slate-800/900 */
-  --card-foreground: oklch(0.984 0.003 248);
-  --popover: oklch(0.208 0.03 265);
-  --popover-foreground: oklch(0.984 0.003 248);
+  --brand-900: #1b3c53;
+  --brand-700: #234c6a;
+  --brand-500: #456882;
+  --brand-200: #e3e3e3;
 
-  --primary: oklch(0.585 0.233 277); /* indigo-500 #6366f1 */
-  --primary-foreground: oklch(0.984 0.003 248);
-  --secondary: oklch(0.279 0.03 260); /* slate-700/800 */
-  --secondary-foreground: oklch(0.984 0.003 248);
-  --muted: oklch(0.279 0.03 260);
-  --muted-foreground: oklch(0.704 0.03 257); /* slate-400, ~7.8:1 on slate-950 */
-  --accent: oklch(0.279 0.03 260);
-  --accent-foreground: oklch(0.984 0.003 248);
+  --background: var(--brand-900); /* the darkest brand step doubles as the dark canvas */
+  --foreground: var(--brand-200);
+  --card: color-mix(in oklab, var(--brand-900) 60%, var(--brand-700) 40%); /* a raised step lighter */
+  --card-foreground: var(--brand-200);
+  --popover: color-mix(in oklab, var(--brand-900) 60%, var(--brand-700) 40%);
+  --popover-foreground: var(--brand-200);
+
+  --primary: color-mix(in oklab, var(--brand-500) 60%, var(--brand-200) 40%); /* lightened for the dark canvas */
+  --primary-foreground: var(--brand-900);
+  --secondary: color-mix(in oklab, var(--brand-900) 55%, var(--brand-700) 45%);
+  --secondary-foreground: var(--brand-200);
+  --muted: color-mix(in oklab, var(--brand-900) 55%, var(--brand-700) 45%);
+  --muted-foreground: color-mix(in oklab, var(--brand-500) 75%, var(--brand-200) 25%);
+  --accent: color-mix(in oklab, var(--brand-700) 55%, var(--brand-900) 45%);
+  --accent-foreground: var(--brand-200);
+
+  --ai-accent: color-mix(in oklab, var(--brand-500) 70%, var(--brand-200) 30%); /* brighter for the dark canvas */
+  --ai-accent-foreground: var(--brand-900);
 
   --destructive: oklch(0.704 0.19 22.2); /* red-500 */
   --destructive-foreground: oklch(0.984 0.003 248);
@@ -88,21 +119,21 @@
   --success-foreground: oklch(0.129 0.02 265);
   --warning: oklch(0.828 0.19 84); /* amber-400 */
   --warning-foreground: oklch(0.129 0.02 265);
-  --info: oklch(0.623 0.19 260); /* blue-500 */
-  --info-foreground: oklch(0.129 0.02 265);
+  --info: color-mix(in oklab, var(--brand-700) 65%, var(--brand-200) 35%);
+  --info-foreground: var(--brand-900);
 
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.673 0.182 277); /* indigo-400 */
+  --ring: color-mix(in oklab, var(--brand-500) 70%, var(--brand-200) 30%);
 
-  --sidebar: oklch(0.168 0.025 265);
-  --sidebar-foreground: oklch(0.984 0.003 248);
-  --sidebar-primary: oklch(0.585 0.233 277);
-  --sidebar-primary-foreground: oklch(0.984 0.003 248);
-  --sidebar-accent: oklch(0.279 0.03 260);
-  --sidebar-accent-foreground: oklch(0.984 0.003 248);
+  --sidebar: color-mix(in oklab, var(--brand-900) 85%, black 15%);
+  --sidebar-foreground: var(--brand-200);
+  --sidebar-primary: color-mix(in oklab, var(--brand-500) 60%, var(--brand-200) 40%);
+  --sidebar-primary-foreground: var(--brand-900);
+  --sidebar-accent: color-mix(in oklab, var(--brand-700) 55%, var(--brand-900) 45%);
+  --sidebar-accent-foreground: var(--brand-200);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.673 0.182 277);
+  --sidebar-ring: color-mix(in oklab, var(--brand-500) 70%, var(--brand-200) 30%);
 
   /* Data-viz categorical — dark surface (re-stepped, not auto-flipped). */
   --chart-1: #3987e5;
@@ -116,6 +147,11 @@
 }
 
 @theme inline {
+  --color-brand-900: var(--brand-900);
+  --color-brand-700: var(--brand-700);
+  --color-brand-500: var(--brand-500);
+  --color-brand-200: var(--brand-200);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -130,6 +166,8 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-ai-accent: var(--ai-accent);
+  --color-ai-accent-foreground: var(--ai-accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
@@ -222,6 +260,25 @@
   40% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* Signup brand panel (SignupPage.tsx) — a token travels the question -> verified -> resolved
+   track, echoing the grounding-gate flow a real conversation goes through. */
+@keyframes helm-flow {
+  0% {
+    left: -8%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    left: 108%;
+    opacity: 0;
   }
 }
 
@@ -329,7 +386,7 @@
    (caret=cswblink, entrances=cswfadein, dots=cswbounce already exist above).
    ───────────────────────────────────────────────────────────────────────────── */
 .csw-root {
-  --csw-focus: color-mix(in srgb, var(--primary, #4f46e5) 55%, transparent);
+  --csw-focus: color-mix(in srgb, var(--primary, #1B3C53) 55%, transparent);
 }
 .csw-root .csw-chip,
 .csw-root .csw-cite,
@@ -343,7 +400,7 @@
 }
 .csw-root .csw-chip:hover {
   transform: translateY(-1px);
-  border-color: var(--primary, #4f46e5);
+  border-color: var(--primary, #1B3C53);
 }
 .csw-root .csw-ghost:hover {
   transform: translateY(-1px);
@@ -371,7 +428,7 @@
   box-shadow: 0 6px 18px color-mix(in oklab, var(--foreground, #0f172a) 16%, transparent);
 }
 .csw-root .csw-composer:focus-within {
-  border-color: var(--primary, #4f46e5);
+  border-color: var(--primary, #1B3C53);
   box-shadow: 0 0 0 3px var(--csw-focus);
 }
 .csw-root :focus-visible {

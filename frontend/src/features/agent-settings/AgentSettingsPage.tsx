@@ -11,7 +11,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ShieldAlert, Tags, X } from "lucide-react";
+import { Tags, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +19,7 @@ import { useAuth } from "@/app/providers";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { NoAccessState } from "@/components/no-access-state";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -76,13 +77,13 @@ const THRESHOLD_OPTIONS: { key: string; label: string; value: number | null; hin
     key: "default",
     label: "Eval default (calibrated)",
     value: null,
-    hint: "Use the per-tenant cutoff calibrated on a labelled eval set. Recommended.",
+    hint: "Use the cutoff calibrated on a labelled eval set for your account. Recommended.",
   },
   {
     key: "lenient",
     label: "Lenient",
     value: 0.5,
-    hint: "Answers more often — higher coverage, higher risk of ungrounded replies.",
+    hint: "Answers more often. Higher coverage, higher risk of ungrounded replies.",
   },
   {
     key: "balanced",
@@ -94,7 +95,7 @@ const THRESHOLD_OPTIONS: { key: string; label: string; value: number | null; hin
     key: "strict",
     label: "Strict",
     value: 1.5,
-    hint: "Answers only on strong matches — safest, but refuses more borderline questions.",
+    hint: "Answers only on strong matches. Safest, but refuses more borderline questions.",
   },
 ];
 
@@ -675,11 +676,7 @@ export function AgentSettingsPage() {
           title="Agent settings"
           description="Configure how the AI assistant answers, escalates, and tags conversations."
         />
-        <EmptyState
-          icon={ShieldAlert}
-          title="You don't have access"
-          description="Managing agent settings requires an admin role. Ask a workspace admin if you need changes."
-        />
+        <NoAccessState description="Managing agent settings requires an admin role. Ask an admin if you need changes." />
       </div>
     );
   }
@@ -689,7 +686,7 @@ export function AgentSettingsPage() {
       <div>
         <PageHeader
           title="Agent settings"
-          description="Configure how the AI assistant answers, escalates, and tags conversations for this workspace."
+          description="Configure how the AI assistant answers, escalates, and tags conversations for your account."
         />
         {settingsQ.isLoading ? (
           <SettingsSkeleton />

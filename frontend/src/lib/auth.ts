@@ -78,7 +78,7 @@ export type Industry = "retail" | "logistics" | "telecom" | "healthcare" | "trav
 export interface SignupPayload {
   email: string;
   password: string;
-  workspace_name: string;
+  company_name: string;
   industry: Industry;
 }
 

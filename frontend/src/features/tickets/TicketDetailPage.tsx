@@ -492,7 +492,7 @@ export function TicketDetailPage() {
                         className="flex items-center gap-1.5 text-xs font-medium text-warning-foreground"
                       >
                         <Lock className="size-3.5" />
-                        Internal note — never shown to the customer.
+                        Internal note. Never shown to the customer.
                       </Label>
                       <Textarea
                         id="note-input"

@@ -532,7 +532,7 @@ export function AgentWorkspacePage() {
                 ) : claimedByOther ? (
                   <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-muted-foreground">
                     <User className="size-4 shrink-0" />
-                    This conversation is being handled by another agent — read-only.
+                    This conversation is being handled by another agent. Read-only.
                   </div>
                 ) : isEscalated ? (
                   <div className="space-y-2">

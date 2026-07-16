@@ -304,7 +304,7 @@ function InviteTeammateDialog() {
         <DialogHeader>
           <DialogTitle>Invite teammate</DialogTitle>
           <DialogDescription>
-            Send an invitation to join this workspace. They&apos;ll receive an email to set up their
+            Send an invitation to join your team. They&apos;ll receive an email to set up their
             account.
           </DialogDescription>
         </DialogHeader>

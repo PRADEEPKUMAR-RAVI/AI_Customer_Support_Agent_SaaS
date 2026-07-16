@@ -111,7 +111,7 @@ const STEPS: {
     key: "industry",
     label: "Industry",
     hint: "Your vertical",
-    description: "Confirm the industry your workspace was created for — it decides which record types your agent understands.",
+    description: "Confirm the industry your account was created for. It decides which record types your agent understands.",
     icon: Building2,
   },
   {
@@ -153,7 +153,7 @@ const STEPS: {
     key: "staff",
     label: "Invite your team",
     hint: "Agents & admins",
-    description: "Invite teammates who will handle escalated conversations or manage the workspace.",
+    description: "Invite teammates who will handle escalated conversations or manage the account.",
     icon: Users,
   },
   {
@@ -309,7 +309,7 @@ function IndustryStep({ tenant }: { tenant: Tenant }) {
         <StatusBadge value="ready" />
       </div>
       <p className="text-sm text-muted-foreground">
-        Your industry was locked in when the workspace was created and can't be changed here — it
+        Your industry was locked in when your account was created and can't be changed here. It
         provisions the record schema and default agent behaviour. This vertical supports these
         record types:
       </p>
@@ -653,7 +653,7 @@ function RecordsStep({ industry }: { industry: string }) {
           ) : null}
           {report.row_errors?.length ? (
             <p className="text-destructive">
-              <span className="tabular-nums">{report.row_errors.length}</span> row error(s) — first:
+              <span className="tabular-nums">{report.row_errors.length}</span> row error(s). First:
               row {report.row_errors[0].row}, {report.row_errors[0].error}
             </p>
           ) : null}
@@ -1305,7 +1305,7 @@ export function OnboardingPage() {
   if (tenantQ.isLoading) {
     return (
       <div>
-        <PageHeader title="Set up your workspace" description="Getting your setup ready…" />
+        <PageHeader title="Set up your account" description="Getting your setup ready…" />
         <div className="grid gap-6 md:grid-cols-[280px_minmax(0,1fr)]">
           <Skeleton className="h-80 w-full rounded-xl" />
           <Skeleton className="h-96 w-full rounded-xl" />
@@ -1317,10 +1317,10 @@ export function OnboardingPage() {
   if (tenantQ.isError || !tenant) {
     return (
       <div>
-        <PageHeader title="Set up your workspace" />
+        <PageHeader title="Set up your account" />
         <ErrorState
-          title="Couldn't load your workspace"
-          message="We couldn't reach your workspace. Check your connection and try again."
+          title="Couldn't load your account"
+          message="We couldn't reach your account. Check your connection and try again."
           onRetry={() => void tenantQ.refetch()}
         />
       </div>

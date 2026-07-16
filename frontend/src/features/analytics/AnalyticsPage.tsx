@@ -21,6 +21,8 @@ import { Bot, Coins, Languages, MessagesSquare, ShieldAlert, Tags, Timer } from 
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { NoAccessState } from "@/components/no-access-state";
+import { StatTile } from "@/components/stat-tile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -119,46 +121,6 @@ function ChartTooltip({
 const AXIS_TICK = { fill: CHART_CHROME.axis, fontSize: 12 } as const;
 
 // ---------------------------------------------------------------------------
-// KPI stat card
-// ---------------------------------------------------------------------------
-function StatCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  loading,
-  error,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  icon: typeof Bot;
-  loading?: boolean;
-  error?: boolean;
-}) {
-  return (
-    <Card className="gap-0 py-0">
-      <CardContent className="flex flex-col gap-3 p-5">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-muted-foreground">{label}</span>
-          <Icon className="size-4 text-muted-foreground" aria-hidden />
-        </div>
-        {loading ? (
-          <Skeleton className="h-8 w-24" />
-        ) : (
-          <div className="text-3xl font-semibold tracking-tight tabular-nums">
-            {error ? "—" : value}
-          </div>
-        )}
-        {hint ? (
-          <span className="text-xs text-muted-foreground tabular-nums">{loading ? " " : hint}</span>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Chart shell — title/description + fixed-height body with loading/empty/error
 // ---------------------------------------------------------------------------
 function ChartCard({
@@ -227,12 +189,8 @@ export function AnalyticsPage() {
   if (role && !hasPermission(role, "analytics:read")) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Analytics" description="Resolution, latency, and cost across your tenant." />
-        <EmptyState
-          icon={ShieldAlert}
-          title="No access to analytics"
-          description="Your role doesn't include the analytics:read permission. Ask an admin if you need it."
-        />
+        <PageHeader title="Analytics" description="Resolution, latency, and cost for your account." />
+        <NoAccessState description="Your role doesn't include the analytics:read permission. Ask an admin if you need it." />
       </div>
     );
   }
@@ -263,37 +221,33 @@ export function AnalyticsPage() {
 
       {/* KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
+        <StatTile
           label="Conversations"
           value={ov ? ov.volume.toLocaleString() : "—"}
           hint={ov ? `${ov.turns.toLocaleString()} turns · ${turnsPerConv} per conversation` : undefined}
           icon={MessagesSquare}
           loading={overviewQ.isLoading}
-          error={overviewQ.isError}
         />
-        <StatCard
+        <StatTile
           label="Autonomous resolution"
           value={`${resolvedPct}%`}
           hint={ov ? `${resolvedCount.toLocaleString()} of ${ov.volume.toLocaleString()} resolved by AI` : undefined}
           icon={Bot}
           loading={overviewQ.isLoading}
-          error={overviewQ.isError}
         />
-        <StatCard
+        <StatTile
           label="Latency p95"
           value={lat?.p95_ms != null ? `${lat.p95_ms.toLocaleString()} ms` : "—"}
           hint={lat ? `p50 ${lat.p50_ms != null ? `${lat.p50_ms.toLocaleString()} ms` : "—"} · ${lat.count.toLocaleString()} turns` : undefined}
           icon={Timer}
           loading={latencyQ.isLoading}
-          error={latencyQ.isError}
         />
-        <StatCard
+        <StatTile
           label="Cost / conversation"
           value={cost ? `$${(cost.cost_per_conversation ?? 0).toFixed(4)}` : "—"}
           hint={cost ? `$${(cost.total_cost_usd ?? 0).toFixed(2)} total spend` : undefined}
           icon={Coins}
           loading={costQ.isLoading}
-          error={costQ.isError}
         />
       </div>
 

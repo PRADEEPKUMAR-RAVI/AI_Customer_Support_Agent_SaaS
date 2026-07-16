@@ -3,9 +3,8 @@
  * presents them: a success summary, or the missing headers / duplicate keys / per-row errors that
  * caused a full rejection (nothing is saved unless `ok`). */
 
-import { AlertCircle, CheckCircle2 } from "lucide-react";
-
 import { Badge } from "@/components/ui/badge";
+import { ReportBanner } from "@/components/report-banner";
 
 import type { DatasetUploadReport } from "./api";
 
@@ -15,21 +14,22 @@ const MAX_ROW_ERRORS = 10;
 export function ValidationReport({ report }: { report: DatasetUploadReport }) {
   if (report.ok) {
     return (
-      <div className="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success/10 p-3 text-sm">
-        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-        <div className="space-y-0.5">
-          <p className="font-medium text-success">
+      <ReportBanner
+        ok
+        heading={
+          <>
             Imported <span className="tabular-nums">{(report.inserted ?? 0).toLocaleString()}</span>{" "}
             rows.
+          </>
+        }
+      >
+        {report.truncated > 0 ? (
+          <p className="pl-6 text-muted-foreground">
+            <span className="tabular-nums">{report.truncated.toLocaleString()}</span> extra rows
+            were truncated to stay within the dataset limit.
           </p>
-          {report.truncated > 0 ? (
-            <p className="text-muted-foreground">
-              <span className="tabular-nums">{report.truncated.toLocaleString()}</span> extra rows
-              were truncated to stay within the dataset limit.
-            </p>
-          ) : null}
-        </div>
-      </div>
+        ) : null}
+      </ReportBanner>
     );
   }
 
@@ -41,12 +41,7 @@ export function ValidationReport({ report }: { report: DatasetUploadReport }) {
   const extraDupes = dups.length - MAX_DUPES;
 
   return (
-    <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
-      <div className="flex items-start gap-2.5">
-        <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
-        <p className="font-medium text-destructive">Upload rejected — nothing was saved.</p>
-      </div>
-
+    <ReportBanner ok={false} heading="Upload rejected. Nothing was saved.">
       {missing.length > 0 ? (
         <div className="space-y-1.5 pl-6">
           <p className="text-xs font-medium text-muted-foreground">Missing required headers</p>
@@ -96,6 +91,6 @@ export function ValidationReport({ report }: { report: DatasetUploadReport }) {
           ) : null}
         </div>
       ) : null}
-    </div>
+    </ReportBanner>
   );
 }

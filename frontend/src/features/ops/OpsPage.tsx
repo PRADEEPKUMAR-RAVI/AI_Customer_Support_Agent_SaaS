@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { StatTile } from "@/components/stat-tile";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -334,17 +335,17 @@ function HealthTab() {
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <StatCard
+      <StatTile
         icon={MailWarning}
         label="Email DLQ depth"
-        value={data.email_dlq_depth}
+        value={data.email_dlq_depth.toLocaleString()}
         hint="Dead-lettered messages that exhausted retries and need operator attention."
         alert={data.email_dlq_depth > 0}
       />
-      <StatCard
+      <StatTile
         icon={RefreshCw}
         label="Recent send failures"
-        value={data.recent_send_failures}
+        value={data.recent_send_failures.toLocaleString()}
         hint="Emails that failed at least once and are still backing off for retry."
         alert={data.recent_send_failures > 0}
       />
@@ -375,40 +376,6 @@ function HealthTab() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  alert,
-}: {
-  icon: typeof MailWarning;
-  label: string;
-  value: number;
-  hint: string;
-  alert?: boolean;
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm text-muted-foreground">{label}</span>
-          <span
-            className={cn(
-              "grid size-8 place-items-center rounded-md",
-              alert ? "bg-warning/20 text-warning-foreground" : "bg-secondary text-muted-foreground"
-            )}
-          >
-            <Icon className="size-4" />
-          </span>
-        </div>
-        <div className="text-3xl font-semibold tabular-nums">{value.toLocaleString()}</div>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </CardContent>
-    </Card>
   );
 }
 

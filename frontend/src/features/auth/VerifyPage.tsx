@@ -65,7 +65,7 @@ export function VerifyPage() {
             <CheckCircle2 className="size-6" />
           </div>
           <CardTitle className="text-xl">Email verified</CardTitle>
-          <CardDescription>Your workspace is ready — sign in to get started.</CardDescription>
+          <CardDescription>Your account is ready. Sign in to get started.</CardDescription>
         </CardHeader>
         <CardFooter>
           <Button asChild className="w-full">
@@ -89,7 +89,7 @@ export function VerifyPage() {
       </CardHeader>
       <CardFooter className="flex-col gap-3">
         <Button asChild variant="outline" className="w-full">
-          <Link to="/signup">Create a new workspace</Link>
+          <Link to="/signup">Create a new account</Link>
         </Button>
         <p className="text-center text-sm text-muted-foreground">
           Already verified?{" "}

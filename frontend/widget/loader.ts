@@ -16,7 +16,7 @@ interface WidgetConfig {
 }
 
 const Z = "2147483000"; // above almost everything, below the max (leave room for tenant modals)
-const BRAND = "#4f46e5"; // indigo-600 (matches the design system's primary)
+const BRAND = "#1B3C53"; // darkest brand step (matches the design system's primary)
 
 const ICON_CHAT =
   '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';

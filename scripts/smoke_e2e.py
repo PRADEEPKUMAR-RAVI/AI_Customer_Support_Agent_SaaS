@@ -85,7 +85,7 @@ def main() -> int:
     email = f"owner-{uuid.uuid4().hex[:6]}@acmestore.com"
     su = httpx.post(
         f"{BASE}/auth/signup",
-        json={"email": email, "password": "password123", "workspace_name": "Smoke Co", "industry": "retail"},
+        json={"email": email, "password": "password123", "company_name": "Smoke Co", "industry": "retail"},
         timeout=20,
     )
     check("M9 signup", su.status_code == 201, f"status={su.status_code}")

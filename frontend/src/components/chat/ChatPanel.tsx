@@ -33,7 +33,7 @@ const c = {
   border: "var(--border, #e2e8f0)",
   muted: "var(--muted-foreground, #64748b)",
   secondary: "var(--secondary, #f1f5f9)",
-  primary: "var(--primary, #4f46e5)",
+  primary: "var(--primary, #1B3C53)",
   primaryFg: "var(--primary-foreground, #ffffff)",
   accent: "var(--accent, #eef2ff)",
   accentFg: "var(--accent-foreground, #3730a3)",
@@ -43,7 +43,7 @@ const c = {
 };
 
 const GRADIENT =
-  "linear-gradient(150deg, var(--primary, #6366f1), color-mix(in oklab, var(--primary, #4f46e5) 68%, #000))";
+  "linear-gradient(150deg, var(--primary, #1B3C53), color-mix(in oklab, var(--primary, #1B3C53) 68%, #000))";
 // Reusable layered, single-light-direction depth (composed from the foreground token so it works
 // in both themes). Kept out of interactive elements — those get their shadow via .csw-* classes.
 const SOFT_SHADOW =
@@ -67,7 +67,7 @@ const S = {
   avatar: {
     width: 34, height: 34, borderRadius: 11, display: "grid", placeItems: "center",
     background: GRADIENT, color: c.primaryFg,
-    boxShadow: `0 0 0 1px ${tint("var(--foreground, #0f172a)", 8, "transparent")}, 0 2px 6px ${tint("var(--primary, #4f46e5)", 30, "transparent")}`,
+    boxShadow: `0 0 0 1px ${tint("var(--foreground, #0f172a)", 8, "transparent")}, 0 2px 6px ${tint("var(--primary, #1B3C53)", 30, "transparent")}`,
   } as React.CSSProperties,
   presenceDot: {
     position: "absolute", insetInlineEnd: -2, bottom: -2, width: 10, height: 10, borderRadius: 999,
@@ -88,7 +88,7 @@ const S = {
   botAvatar: {
     width: 26, height: 26, borderRadius: 8, display: "grid", placeItems: "center", flexShrink: 0, marginTop: 1,
     background: GRADIENT, color: c.primaryFg,
-    boxShadow: `0 1px 4px ${tint("var(--primary, #4f46e5)", 26, "transparent")}`,
+    boxShadow: `0 1px 4px ${tint("var(--primary, #1B3C53)", 26, "transparent")}`,
   } as React.CSSProperties,
   botSpacer: { width: 26, flexShrink: 0 } as React.CSSProperties,
   botBody: { flex: 1, minWidth: 0, paddingTop: 1 } as React.CSSProperties,
@@ -178,7 +178,7 @@ const S = {
   consentBtn: {
     marginTop: 4, padding: "10px 18px", borderRadius: 11, cursor: "pointer", border: "none",
     background: GRADIENT, color: c.primaryFg, fontSize: 14, fontFamily: "inherit", fontWeight: 500,
-    boxShadow: `0 2px 8px ${tint("var(--primary, #4f46e5)", 34, "transparent")}`,
+    boxShadow: `0 2px 8px ${tint("var(--primary, #1B3C53)", 34, "transparent")}`,
   } as React.CSSProperties,
   ghostBtn: {
     display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 9,

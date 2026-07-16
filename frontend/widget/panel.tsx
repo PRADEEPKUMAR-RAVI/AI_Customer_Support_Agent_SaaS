@@ -22,31 +22,35 @@ interface WidgetConfig {
 const WIDGET_CSS = `
 :host {
   all: initial;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.02 265);
+  --brand-900: #1b3c53;
+  --brand-700: #234c6a;
+  --brand-500: #456882;
+  --brand-200: #e3e3e3;
+  --background: color-mix(in oklab, var(--brand-200) 16%, white);
+  --foreground: var(--brand-900);
   --card: oklch(1 0 0);
-  --secondary: oklch(0.968 0.007 248);
-  --muted-foreground: oklch(0.554 0.03 257);
-  --primary: oklch(0.511 0.262 277);
-  --primary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.961 0.017 272);
-  --accent-foreground: oklch(0.398 0.18 277);
+  --secondary: var(--brand-200);
+  --muted-foreground: var(--brand-500);
+  --primary: var(--brand-900);
+  --primary-foreground: var(--brand-200);
+  --accent: color-mix(in oklab, var(--brand-500) 14%, white);
+  --accent-foreground: var(--brand-900);
   --destructive: oklch(0.577 0.245 27.3);
-  --border: oklch(0.929 0.01 255);
+  --border: color-mix(in oklab, var(--brand-500) 30%, white);
   --radius: 0.5rem;
   --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", monospace;
 }
 @media (prefers-color-scheme: dark) {
   :host {
-    --background: oklch(0.129 0.02 265);
-    --foreground: oklch(0.984 0.003 248);
-    --card: oklch(0.208 0.03 265);
-    --secondary: oklch(0.279 0.03 260);
-    --muted-foreground: oklch(0.704 0.03 257);
-    --primary: oklch(0.585 0.233 277);
-    --primary-foreground: oklch(0.984 0.003 248);
-    --accent: oklch(0.279 0.03 260);
-    --accent-foreground: oklch(0.984 0.003 248);
+    --background: var(--brand-900);
+    --foreground: var(--brand-200);
+    --card: color-mix(in oklab, var(--brand-900) 60%, var(--brand-700) 40%);
+    --secondary: color-mix(in oklab, var(--brand-900) 55%, var(--brand-700) 45%);
+    --muted-foreground: color-mix(in oklab, var(--brand-500) 75%, var(--brand-200) 25%);
+    --primary: color-mix(in oklab, var(--brand-500) 60%, var(--brand-200) 40%);
+    --primary-foreground: var(--brand-900);
+    --accent: color-mix(in oklab, var(--brand-700) 55%, var(--brand-900) 45%);
+    --accent-foreground: var(--brand-200);
     --destructive: oklch(0.704 0.19 22.2);
     --border: oklch(1 0 0 / 0.14);
   }
@@ -79,11 +83,11 @@ const WIDGET_CSS = `
 .chat-md th, .chat-md td { border: 1px solid var(--border); padding: 4px 8px; text-align: start; }
 .chat-md th { background: var(--secondary); font-weight: 600; }
 /* Chat interactive states — MIRROR of the .csw-root block in src/styles/globals.css. Keep in sync. */
-.csw-root { --csw-focus: color-mix(in srgb, var(--primary, #4f46e5) 55%, transparent); }
+.csw-root { --csw-focus: color-mix(in srgb, var(--primary, #1B3C53) 55%, transparent); }
 .csw-root .csw-chip, .csw-root .csw-cite, .csw-root .csw-iconbtn, .csw-root .csw-send, .csw-root .csw-ghost, .csw-root .csw-jump {
   transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 140ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease, opacity 150ms ease;
 }
-.csw-root .csw-chip:hover { transform: translateY(-1px); border-color: var(--primary, #4f46e5); }
+.csw-root .csw-chip:hover { transform: translateY(-1px); border-color: var(--primary, #1B3C53); }
 .csw-root .csw-ghost:hover { transform: translateY(-1px); background: var(--secondary, #f1f5f9); }
 .csw-root .csw-iconbtn:hover { background: var(--secondary, #f1f5f9); }
 .csw-root .csw-cite { box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground, #0f172a) 6%, transparent); }
@@ -91,7 +95,7 @@ const WIDGET_CSS = `
 .csw-root .csw-chip:active, .csw-root .csw-ghost:active { transform: scale(0.97); }
 .csw-root .csw-send:active { transform: scale(0.92); }
 .csw-root .csw-jump:hover { background: var(--secondary, #f1f5f9); box-shadow: 0 6px 18px color-mix(in oklab, var(--foreground, #0f172a) 16%, transparent); }
-.csw-root .csw-composer:focus-within { border-color: var(--primary, #4f46e5); box-shadow: 0 0 0 3px var(--csw-focus); }
+.csw-root .csw-composer:focus-within { border-color: var(--primary, #1B3C53); box-shadow: 0 0 0 3px var(--csw-focus); }
 .csw-root :focus-visible { outline: 2px solid var(--csw-focus); outline-offset: 2px; }
 .csw-root :focus:not(:focus-visible) { outline: none; }
 @media (prefers-reduced-motion: reduce) {

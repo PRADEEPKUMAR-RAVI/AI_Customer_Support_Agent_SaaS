@@ -55,7 +55,7 @@ function PasteTab({ onDone }: TabProps) {
   const mut = useMutation({
     mutationFn: (v: z.infer<typeof schema>) => createPasteSource(v.name, v.content),
     onSuccess: () => {
-      toast.success("Source added — indexing started.");
+      toast.success("Source added. Indexing started.");
       qc.invalidateQueries({ queryKey: SOURCES_KEY });
       form.reset();
       onDone();
@@ -176,7 +176,7 @@ function FileTab({ onDone }: TabProps) {
   const mut = useMutation({
     mutationFn: () => uploadFileSource(file as File, name.trim() || undefined),
     onSuccess: () => {
-      toast.success("File uploaded — indexing started.");
+      toast.success("File uploaded. Indexing started.");
       qc.invalidateQueries({ queryKey: SOURCES_KEY });
       setFile(null);
       setName("");

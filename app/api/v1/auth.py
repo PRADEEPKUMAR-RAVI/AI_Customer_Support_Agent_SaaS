@@ -74,7 +74,7 @@ async def signup(body: SignupRequest) -> dict:
     try:
         async with SessionLocal() as session:
             async with session.begin():
-                tenant = Tenant(name=body.workspace_name, industry=body.industry.value, status="active")
+                tenant = Tenant(name=body.company_name, industry=body.industry.value, status="active")
                 session.add(tenant)
                 await session.flush()  # obtain tenant.id
                 await set_tenant_guc(session, tenant.id)  # subsequent inserts auto-scope

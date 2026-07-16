@@ -12,6 +12,7 @@ from app.api.v1 import (
     conversations,
     health,
     knowledge,
+    onboarding,
     ops,
     records,
     tickets,
@@ -28,6 +29,7 @@ api_router.include_router(tickets.router)
 api_router.include_router(agents.router)
 api_router.include_router(ops.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(onboarding.router)
 api_router.include_router(analytics.router)
 api_router.include_router(widget.router)
 api_router.include_router(conversations.router)

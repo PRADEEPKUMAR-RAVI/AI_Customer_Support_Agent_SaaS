@@ -10,7 +10,7 @@ from app.domain.records.schemas import Industry
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)
-    workspace_name: str = Field(min_length=1, max_length=200)
+    company_name: str = Field(min_length=1, max_length=200)
     industry: Industry
 
 

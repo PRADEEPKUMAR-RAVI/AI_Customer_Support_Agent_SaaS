@@ -28,7 +28,7 @@ async def signup(c: AsyncClient, *, industry: str = "retail") -> tuple[str, str,
         json={
             "email": email,
             "password": password,
-            "workspace_name": "Acme Test Co",
+            "company_name": "Acme Test Co",
             "industry": industry,
         },
     )

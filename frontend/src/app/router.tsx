@@ -3,10 +3,11 @@
  * hosted chat page renders full-bleed outside every shell. */
 
 import { Loader2 } from "lucide-react";
-import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 
 import { Chat } from "@/components/chat";
 import { EmptyState } from "@/components/empty-state";
+import { NoAccessState } from "@/components/no-access-state";
 import { hasPermission } from "@/lib/rbac";
 
 import { AgentSettingsPage } from "../features/agent-settings/AgentSettingsPage";
@@ -21,6 +22,7 @@ import { ChannelsPage } from "../features/channels/ChannelsPage";
 import { KnowledgePage } from "../features/knowledge/KnowledgePage";
 import { LandingPage } from "../features/landing/LandingPage";
 import { OnboardingPage } from "../features/onboarding/OnboardingPage";
+import { useOnboardingStatus } from "../features/onboarding/useOnboardingStatus";
 import { OpsPage } from "../features/ops/OpsPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { RecordsPage } from "../features/records/RecordsPage";
@@ -46,15 +48,27 @@ function RequireAuth() {
   return authenticated ? <Outlet /> : <Navigate to="/login" replace />;
 }
 
+/** Forces admins through /onboarding until the required setup steps are done — derived from
+ * resource state (see `useOnboardingStatus`), not a stored flag, so it can never drift from the
+ * wizard's own step checklist. Agents (and any other non-admin role) aren't gated: they can't
+ * complete these admin-only steps anyway. */
+function RequireOnboarding() {
+  const { role } = useAuth();
+  const { data, isLoading } = useOnboardingStatus();
+  const location = useLocation();
+
+  if (role !== "admin") return <Outlet />;
+  if (isLoading) return <FullPageLoader />;
+  if (data && !data.completed && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <Outlet />;
+}
+
 function Guard({ perm, children }: { perm: string; children: JSX.Element }) {
   const { role } = useAuth();
   if (hasPermission(role, perm)) return children;
-  return (
-    <EmptyState
-      title="No access"
-      description="Your role doesn't have permission to view this page. Ask an admin if you need it."
-    />
-  );
+  return <NoAccessState />;
 }
 
 function NotFound() {
@@ -79,28 +93,32 @@ export function AppRouter() {
       <Route path="/chat/:widgetKey" element={<HostedChat />} />
       <Route path="/" element={<LandingPage />} />
 
+      {/* Full-bleed split layout of its own — not the shared centered AuthLayout column. */}
+      <Route path="/signup" element={<SignupPage />} />
+
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
         <Route path="/verify" element={<VerifyPage />} />
         <Route path="/forgot" element={<ForgotPage />} />
         <Route path="/reset" element={<ResetPage />} />
       </Route>
 
       <Route element={<RequireAuth />}>
-        <Route element={<ConsoleLayout />}>
-          <Route path="/overview" element={<OverviewPage />} />
-          <Route path="/tickets" element={<Guard perm="tickets:read"><TicketsPage /></Guard>} />
-          <Route path="/tickets/:id" element={<Guard perm="tickets:read"><TicketDetailPage /></Guard>} />
-          <Route path="/inbox" element={<Guard perm="agents:queue"><AgentWorkspacePage /></Guard>} />
-          <Route path="/onboarding" element={<Guard perm="settings:manage"><OnboardingPage /></Guard>} />
-          <Route path="/knowledge" element={<Guard perm="kb:manage"><KnowledgePage /></Guard>} />
-          <Route path="/records" element={<Guard perm="records:manage"><RecordsPage /></Guard>} />
-          <Route path="/settings" element={<Guard perm="settings:manage"><AgentSettingsPage /></Guard>} />
-          <Route path="/channels" element={<Guard perm="settings:manage"><ChannelsPage /></Guard>} />
-          <Route path="/staff" element={<Guard perm="staff:manage"><StaffPage /></Guard>} />
-          <Route path="/analytics" element={<Guard perm="analytics:read"><AnalyticsPage /></Guard>} />
-          <Route path="*" element={<NotFound />} />
+        <Route element={<RequireOnboarding />}>
+          <Route element={<ConsoleLayout />}>
+            <Route path="/overview" element={<OverviewPage />} />
+            <Route path="/tickets" element={<Guard perm="tickets:read"><TicketsPage /></Guard>} />
+            <Route path="/tickets/:id" element={<Guard perm="tickets:read"><TicketDetailPage /></Guard>} />
+            <Route path="/inbox" element={<Guard perm="agents:queue"><AgentWorkspacePage /></Guard>} />
+            <Route path="/onboarding" element={<Guard perm="settings:manage"><OnboardingPage /></Guard>} />
+            <Route path="/knowledge" element={<Guard perm="kb:manage"><KnowledgePage /></Guard>} />
+            <Route path="/records" element={<Guard perm="records:manage"><RecordsPage /></Guard>} />
+            <Route path="/settings" element={<Guard perm="settings:manage"><AgentSettingsPage /></Guard>} />
+            <Route path="/channels" element={<Guard perm="settings:manage"><ChannelsPage /></Guard>} />
+            <Route path="/staff" element={<Guard perm="staff:manage"><StaffPage /></Guard>} />
+            <Route path="/analytics" element={<Guard perm="analytics:read"><AnalyticsPage /></Guard>} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
         </Route>
       </Route>
 

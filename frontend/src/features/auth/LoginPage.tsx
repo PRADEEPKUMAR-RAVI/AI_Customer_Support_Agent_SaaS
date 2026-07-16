@@ -82,7 +82,7 @@ export function LoginPage() {
           <p className="text-center text-sm text-muted-foreground">
             New here?{" "}
             <Link to="/signup" className="font-medium text-primary hover:underline">
-              Create a workspace
+              Create an account
             </Link>
           </p>
         </CardFooter>

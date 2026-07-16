@@ -26,10 +26,10 @@ import type { components } from "@/api/generated/schema";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { StatTile } from "@/components/stat-tile";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { api, unwrap } from "@/lib/api";
 import { hasPermission } from "@/lib/rbac";
 
@@ -79,44 +79,6 @@ function timeAgo(iso: string): string {
   if (abs < day) return rtf.format(Math.round(diffMs / hour), "hour");
   if (abs < 30 * day) return rtf.format(Math.round(diffMs / day), "day");
   return new Date(iso).toLocaleDateString();
-}
-
-interface KpiCardProps {
-  icon: LucideIcon;
-  label: string;
-  value: string | null;
-  hint?: string;
-  loading?: boolean;
-}
-
-/** A single headline stat: label + icon chip, a large tabular-nums figure, and a muted hint. */
-function KpiCard({ icon: Icon, label, value, hint, loading }: KpiCardProps) {
-  return (
-    <Card className="gap-0 py-5">
-      <CardContent className="px-5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-muted-foreground">{label}</span>
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
-            <Icon className="size-4" />
-          </span>
-        </div>
-        <div className="mt-3">
-          {loading ? (
-            <Skeleton className="h-8 w-24" />
-          ) : (
-            <span className="text-3xl font-semibold tracking-tight tabular-nums">
-              {value ?? "—"}
-            </span>
-          )}
-        </div>
-        {loading ? (
-          <Skeleton className="mt-2.5 h-3 w-28" />
-        ) : hint ? (
-          <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
 }
 
 const SETUP_STEPS: { to: string; icon: LucideIcon; title: string; description: string }[] = [
@@ -189,7 +151,7 @@ export function OverviewPage() {
   const greeting = useMemo(() => {
     const name = nameFromEmail(email);
     const hello = greetingForHour(new Date().getHours());
-    return `${hello}${name ? `, ${name}` : ""} — here's how your support desk is doing.`;
+    return `${hello}${name ? `, ${name}` : ""}. Here's how your support desk is doing.`;
   }, [email]);
 
   const overviewQ = useQuery({
@@ -338,31 +300,31 @@ export function OverviewPage() {
 
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
+          <StatTile
             icon={MessagesSquare}
             label="Conversations"
-            value={conversationsValue}
+            value={conversationsValue ?? "—"}
             hint={conversationsHint}
             loading={canAnalytics && overviewQ.isLoading}
           />
-          <KpiCard
+          <StatTile
             icon={Sparkles}
             label="Auto-resolved"
-            value={autoResolvedValue}
+            value={autoResolvedValue ?? "—"}
             hint="Resolved without a human"
             loading={canAnalytics && overviewQ.isLoading}
           />
-          <KpiCard
+          <StatTile
             icon={AlertTriangle}
             label="Open escalations"
-            value={escalationsValue}
+            value={escalationsValue ?? "—"}
             hint="Awaiting a human agent"
             loading={canTickets && escalationsQ.isLoading}
           />
-          <KpiCard
+          <StatTile
             icon={CircleDollarSign}
             label="Total cost"
-            value={costValue}
+            value={costValue ?? "—"}
             hint={costHint}
             loading={canAnalytics && costQ.isLoading}
           />

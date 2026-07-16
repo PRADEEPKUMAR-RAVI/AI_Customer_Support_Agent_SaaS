@@ -248,7 +248,7 @@ function WidgetKeyCard() {
           Widget key
         </CardTitle>
         <CardDescription>
-          Public identifier that ties the widget to this workspace. It's safe to expose in
+          Public identifier that ties the widget to your account. It's safe to expose in
           client-side code, but rotate it if you suspect it has been misused.
         </CardDescription>
       </CardHeader>
@@ -416,8 +416,8 @@ function AllowedDomainsCard() {
           Allowed domains
         </CardTitle>
         <CardDescription>
-          The widget only loads on the domains you list here. Add each site's bare hostname —
-          subdomains and wildcards (<code className="font-mono">*.example.com</code>) are supported.
+          The widget only loads on the domains you list here. Add each site's bare hostname.
+          Subdomains and wildcards (<code className="font-mono">*.example.com</code>) are supported.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

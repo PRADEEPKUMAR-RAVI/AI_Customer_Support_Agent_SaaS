@@ -4,7 +4,7 @@ type Tone = "muted" | "primary" | "success" | "warning" | "info" | "danger";
 
 const TONE: Record<Tone, { pill: string; dot: string }> = {
   muted: { pill: "bg-secondary text-muted-foreground border-border", dot: "bg-muted-foreground/60" },
-  primary: { pill: "bg-accent text-accent-foreground", dot: "bg-primary" },
+  primary: { pill: "bg-ai-accent/12 text-ai-accent", dot: "bg-ai-accent" }, // "AI handling" — kept out of --primary so it never reads as a plain action
   success: { pill: "bg-success/12 text-success", dot: "bg-success" },
   warning: { pill: "bg-warning/20 text-warning-foreground", dot: "bg-warning" },
   info: { pill: "bg-info/12 text-info", dot: "bg-info" },
