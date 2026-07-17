@@ -1,4 +1,4 @@
-import { MessagesSquare } from "lucide-react";
+import { Waypoints } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { NAV_GROUPS } from "@/app/nav";
@@ -26,10 +26,10 @@ export function AppSidebar() {
       <SidebarHeader>
         <div className="flex items-center gap-2.5 px-1.5 py-1.5">
           <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
-            <MessagesSquare className="size-4" />
+            <Waypoints className="size-4" />
           </div>
           <div className="grid group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-semibold leading-tight tracking-tight">Helm</span>
+            <span className="text-sm font-semibold leading-tight tracking-tight">Relay</span>
             <span className="text-xs leading-tight text-muted-foreground">Support console</span>
           </div>
         </div>

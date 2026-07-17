@@ -1,4 +1,4 @@
-import { MessagesSquare } from "lucide-react";
+import { Waypoints } from "lucide-react";
 import { Outlet } from "react-router-dom";
 
 /** Centered, single-column shell for the unauthenticated auth flows (login/verify/forgot/reset).
@@ -16,9 +16,9 @@ export function AuthLayout() {
       <div className="relative w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2.5">
           <div className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
-            <MessagesSquare className="size-5" />
+            <Waypoints className="size-5" />
           </div>
-          <span className="text-lg font-semibold tracking-tight">Helm</span>
+          <span className="text-lg font-semibold tracking-tight">Relay</span>
         </div>
         <Outlet />
       </div>

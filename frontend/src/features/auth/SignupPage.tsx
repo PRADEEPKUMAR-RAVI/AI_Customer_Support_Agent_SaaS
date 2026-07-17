@@ -1,20 +1,26 @@
-/** FE-Auth — `/signup`. A full-bleed split layout (not the shared centered `AuthLayout` column):
- * a permanently-dark brand rail on the left carries the pitch, a light form panel on the right
- * carries the work. Company name + email + password + industry pick in one step for a business
- * signing up to embed an AI support agent: the backend's `SignupRequest` already requires an
- * industry (it provisions the record schema + default agent_settings atomically), so there is no
- * separate "pick an industry" screen for the walking skeleton — this form *is* the Phase-1
- * "industry pick". */
+/** FE-Auth — `/signup`. A single centered split card (not the shared centered `AuthLayout`
+ * column): the pitch sits on the left on a softly tinted panel, the form on the right on the
+ * card surface — separated by a background shift, not a hairline. Company name + email +
+ * password + industry pick in one step for a business signing up to embed an AI support agent:
+ * the backend's `SignupRequest` already requires an industry (it provisions the record schema +
+ * default agent_settings atomically), so there is no separate "pick an industry" screen for the
+ * walking skeleton — this form *is* the Phase-1 "industry pick".
+ *
+ * Follows the app's normal light/dark theme (the `.dark` class on `<html>`) via the standard
+ * semantic tokens — no pinned palette — with its own compact sun/moon switch since this page has
+ * no top bar of its own. */
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import {
   CheckCircle2,
+  Lock,
   MailCheck,
   MessageSquare,
-  MessagesSquare,
-  Search,
+  Moon,
+  Sun,
   Users,
+  Waypoints,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -42,6 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTheme } from "@/lib/useTheme";
 import { cn } from "@/lib/utils";
 
 import { signup, type Industry } from "../../lib/auth";
@@ -63,6 +70,38 @@ const signupSchema = z.object({
 
 type SignupValues = z.infer<typeof signupSchema>;
 
+// ── theme switch — a compact two-state track with both icons always visible ────────────────────
+
+function ThemeSwitch({ className }: { className?: string }) {
+  const { resolvedTheme, setTheme } = useTheme();
+  const dark = resolvedTheme === "dark";
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={dark}
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={() => setTheme(dark ? "light" : "dark")}
+      className={cn(
+        "relative inline-flex h-8 w-[3.75rem] shrink-0 items-center rounded-full border border-border bg-card shadow-md transition-colors",
+        className
+      )}
+    >
+      <Sun className="absolute left-1.5 size-4 text-muted-foreground" />
+      <Moon className="absolute right-1.5 size-4 text-muted-foreground" />
+      <span
+        className={cn(
+          "absolute left-0.5 grid size-7 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform duration-200",
+          dark && "translate-x-[1.75rem]"
+        )}
+      >
+        {dark ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
+      </span>
+    </button>
+  );
+}
+
 // ── brand rail (desktop only) ────────────────────────────────────────────────────────────────
 
 function BrandMark({ className }: { className?: string }) {
@@ -73,7 +112,7 @@ function BrandMark({ className }: { className?: string }) {
         className
       )}
     >
-      <MessagesSquare className="size-4" />
+      <Waypoints className="size-4" />
     </div>
   );
 }
@@ -81,23 +120,24 @@ function BrandMark({ className }: { className?: string }) {
 function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div>
-      <p className="font-mono text-lg font-semibold tabular-nums text-white">{value}</p>
-      <p className="mt-1 text-[11px] text-white/45">{label}</p>
+      <p className="font-mono text-xl font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">{label}</p>
     </div>
   );
 }
 
 const FLOW_TONE = {
-  neutral: { ring: "border-white/15 bg-white/5 text-white/70", track: "via-white/40" },
-  resolved: { ring: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", track: "via-emerald-400" },
+  question: { ring: "border-warning/40 bg-warning/15 text-warning", track: "via-blue-500/80" },
+  verified: { ring: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400", track: "via-success" },
+  resolved: { ring: "border-success/40 bg-success/10 text-success", track: "" },
 } as const;
 
-/** Soft halo behind each step's icon — independent of the ring/border tone above, so all three
- * steps can carry their own glow without reintroducing flat, saturated per-step colors. */
+/** Soft halo behind each step's icon — all three steps glow at the same intensity, since every
+ * gate matters equally; only the hue changes as a turn moves from asked, to checked, to landed. */
 const GLOW_TONE = {
-  neutral: "bg-white/20",
-  checking: "bg-brand-500/50",
-  resolved: "bg-emerald-400/50",
+  question: "bg-warning/25",
+  verified: "bg-blue-500/25",
+  resolved: "bg-success/25",
 } as const;
 
 function FlowStep({
@@ -112,53 +152,51 @@ function FlowStep({
   glow: keyof typeof GLOW_TONE;
 }) {
   return (
-    <div className="flex w-16 flex-col items-center gap-2 text-center">
+    <div className="flex w-16 flex-col items-center gap-2.5 text-center">
       <div className="relative grid place-items-center">
-        <div aria-hidden className={cn("absolute size-7 rounded-full blur-md", GLOW_TONE[glow])} />
+        <div aria-hidden className={cn("absolute size-9 rounded-full blur-md", GLOW_TONE[glow])} />
         <div
           className={cn(
-            "relative grid size-9 place-items-center rounded-full border",
+            "relative grid size-10 place-items-center rounded-full border",
             FLOW_TONE[tone].ring
           )}
         >
           <Icon className="size-4" />
         </div>
       </div>
-      <span className="text-[10px] leading-tight font-medium text-white/50">{label}</span>
+      <span className="text-[10px] leading-tight font-medium text-muted-foreground">{label}</span>
     </div>
   );
 }
 
 function FlowTrack({ tone }: { tone: keyof typeof FLOW_TONE }) {
   return (
-    <div className="flex-1 pt-[18px]">
-      <div className="relative h-px overflow-hidden bg-white/10">
+    <div className="flex-1 pt-5">
+      <div className="relative h-px overflow-hidden bg-border">
         <span
           aria-hidden
           className={cn(
             "absolute inset-y-0 w-10 -translate-x-1/2 bg-gradient-to-r from-transparent to-transparent",
             FLOW_TONE[tone].track
           )}
-          style={{ animation: "helm-flow 2.4s ease-in-out infinite" }}
+          style={{ animation: "relay-flow 2.4s ease-in-out infinite" }}
         />
       </div>
     </div>
   );
 }
 
-/** Signature element: how a real turn resolves. A customer asks, Helm checks the question
- * against your content before answering, and the turn lands resolved. Every step stays the same
- * light tone against the dark rail; only the final, resolved state gets its own color, since
- * that's the one true status signal here. See CLAUDE.md non-negotiable #3 for the actual gate
- * this mirrors. */
+/** Signature element: how a real turn resolves. A customer asks, Relay checks the question
+ * against your content before answering, and the turn lands resolved. See CLAUDE.md non-negotiable
+ * #3 for the actual gate this mirrors. */
 function FlowGraphic() {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+    <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-sm">
       <div className="flex items-start">
-        <FlowStep icon={MessageSquare} label="Question" tone="neutral" glow="neutral" />
-        <FlowTrack tone="neutral" />
-        <FlowStep icon={Search} label="Checked" tone="neutral" glow="checking" />
-        <FlowTrack tone="resolved" />
+        <FlowStep icon={MessageSquare} label="Question" tone="question" glow="question" />
+        <FlowTrack tone="question" />
+        <FlowStep icon={Lock} label="Verified" tone="verified" glow="verified" />
+        <FlowTrack tone="verified" />
         <FlowStep icon={CheckCircle2} label="Resolved" tone="resolved" glow="resolved" />
       </div>
     </div>
@@ -167,47 +205,40 @@ function FlowGraphic() {
 
 function BrandPanel() {
   return (
-    <div className="relative hidden flex-col justify-between overflow-hidden bg-slate-950 px-12 py-12 text-white lg:flex">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.15]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.4) 1px, transparent 0)",
-          backgroundSize: "24px 24px",
-        }}
-      />
-
+    <div className="relative hidden flex-col justify-between bg-gradient-to-br from-secondary/70 to-secondary/25 px-10 py-10 lg:flex lg:px-11 lg:py-11">
       <Link to="/" className="relative flex items-center gap-2.5">
         <BrandMark />
-        <span className="text-sm font-semibold tracking-tight">Helm</span>
+        <span className="text-sm font-semibold tracking-tight">Relay</span>
       </Link>
 
-      <div className="relative max-w-md space-y-5">
-        <h1 className="text-2xl leading-[1.15] font-semibold tracking-tight text-balance">
-          AI support that resolves customer conversations.
-        </h1>
-        <p className="text-sm leading-relaxed text-white/70">
-          Helm uses your knowledge base and customer data to answer questions, verify responses,
-          and escalate only the conversations that require human attention.
-        </p>
+      <div className="relative w-full space-y-6">
+        <div className="space-y-4">
+          <div aria-hidden className="h-1 w-10 rounded-full bg-ai-accent" />
+          <h1 className="text-[1.9rem] leading-[1.15] font-semibold tracking-tight text-balance">
+            AI support that verifies before it answers.
+          </h1>
+          <p className="text-[15px] leading-relaxed text-muted-foreground">
+            Relay uses your knowledge base and customer records to answer questions, verify
+            identity in code, and escalate only the conversations that need a human.
+          </p>
+        </div>
 
         <FlowGraphic />
 
-        <dl className="grid grid-cols-3 gap-6 border-t border-white/10 pt-5">
+        <dl className="grid grid-cols-3 gap-4 border-t border-border pt-6">
           <Stat value="24/7" label="Always available" />
           <Stat value="<2s" label="Median first response" />
           <Stat value="100%" label="Grounded in your knowledge" />
         </dl>
       </div>
 
-      <ul className="relative space-y-2.5 text-xs text-white/70">
+      <ul className="relative w-full space-y-2.5 text-xs text-muted-foreground">
         <li className="flex items-center gap-2.5">
-          <Zap className="size-3.5 shrink-0 text-white/70" />
+          <Zap className="size-3.5 shrink-0 text-ai-accent" />
           Resolves routine customer inquiries automatically.
         </li>
         <li className="flex items-center gap-2.5">
-          <Users className="size-3.5 shrink-0 text-white/70" />
+          <Users className="size-3.5 shrink-0 text-ai-accent" />
           Escalates complex conversations with complete context.
         </li>
       </ul>
@@ -240,35 +271,29 @@ export function SignupPage() {
   });
 
   return (
-    <div className="grid min-h-svh bg-background lg:grid-cols-2">
-      <BrandPanel />
+    <div className="relative grid min-h-svh place-items-center bg-background p-3 text-foreground sm:p-6">
+      <div className="relative grid min-h-[calc(100svh-1.5rem)] w-full max-w-7xl overflow-hidden rounded-3xl border border-border bg-card shadow-xl sm:min-h-[calc(100svh-3rem)] lg:grid-cols-2">
+        <ThemeSwitch className="absolute right-5 top-5 z-20" />
 
-      <div className="relative flex flex-col overflow-hidden px-6 py-8 sm:px-10 lg:px-16 lg:py-14">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-32 -right-32 size-96 rounded-full bg-brand-500/15 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-40 -left-24 size-96 rounded-full bg-brand-700/10 blur-3xl"
-        />
+        <BrandPanel />
 
-        <div className="relative flex items-center lg:justify-end">
-          <Link to="/" className="flex items-center gap-2.5 lg:hidden">
+        <div className="flex flex-col items-center justify-center px-6 py-10 sm:px-10 lg:px-14 lg:py-11">
+          <Link to="/" className="mb-6 flex items-center gap-2.5 lg:hidden">
             <BrandMark />
-            <span className="text-sm font-semibold tracking-tight">Helm</span>
+            <span className="text-sm font-semibold tracking-tight">Relay</span>
           </Link>
-        </div>
 
-        <div className="relative flex flex-1 items-center">
-          <div className="mx-auto w-full max-w-sm" style={{ animation: "cswfadein 0.4s ease-out both" }}>
+          <div
+            className="w-full max-w-sm"
+            style={{ animation: "cswfadein 0.4s ease-out both" }}
+          >
             {sentTo ? (
               <div className="space-y-6">
                 <div className="grid size-11 place-items-center rounded-full bg-primary/10 text-primary">
                   <MailCheck className="size-5" />
                 </div>
                 <div className="space-y-2">
-                  <h1 className="text-lg font-semibold tracking-tight">Check Your Email</h1>
+                  <h1 className="text-xl font-semibold tracking-tight">Check Your Email</h1>
                   <p className="text-xs text-muted-foreground">
                     We sent a verification link to{" "}
                     <span className="font-medium text-foreground">{sentTo}</span>. Follow it to
@@ -287,7 +312,7 @@ export function SignupPage() {
             ) : (
               <div className="space-y-6">
                 <div className="space-y-1.5">
-                  <h1 className="text-lg font-semibold tracking-tight">Create Your Account</h1>
+                  <h1 className="text-xl font-semibold tracking-tight">Create Your Account</h1>
                   <p className="text-xs text-muted-foreground">
                     Set up your AI support agent to deliver fast, accurate customer support around
                     the clock.
@@ -307,7 +332,7 @@ export function SignupPage() {
                           <FormLabel className="text-xs">Company</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="Acme Inc."
+                              placeholder="Soft Suave"
                               autoComplete="organization"
                               className="text-sm"
                               {...field}
@@ -390,7 +415,8 @@ export function SignupPage() {
 
                     <Button
                       type="submit"
-                      className="w-full shadow-lg shadow-brand-900/20"
+                      size="lg"
+                      className="w-full shadow-lg shadow-brand-900/20 transition-shadow hover:shadow-xl hover:shadow-brand-900/25"
                       disabled={mutation.isPending}
                     >
                       {mutation.isPending ? "Creating…" : "Create Account"}

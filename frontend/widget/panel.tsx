@@ -22,11 +22,11 @@ interface WidgetConfig {
 const WIDGET_CSS = `
 :host {
   all: initial;
-  --brand-900: #1b3c53;
-  --brand-700: #234c6a;
-  --brand-500: #456882;
-  --brand-200: #e3e3e3;
-  --background: color-mix(in oklab, var(--brand-200) 16%, white);
+  --brand-900: #1c1917;
+  --brand-700: #5a3d24;
+  --brand-500: #9c5326;
+  --brand-200: #e8e7e2;
+  --background: color-mix(in oklab, var(--brand-200) 22%, white);
   --foreground: var(--brand-900);
   --card: oklch(1 0 0);
   --secondary: var(--brand-200);
@@ -42,17 +42,17 @@ const WIDGET_CSS = `
 }
 @media (prefers-color-scheme: dark) {
   :host {
-    --background: var(--brand-900);
+    --background: color-mix(in oklab, var(--brand-900) 92%, black 8%);
     --foreground: var(--brand-200);
-    --card: color-mix(in oklab, var(--brand-900) 60%, var(--brand-700) 40%);
-    --secondary: color-mix(in oklab, var(--brand-900) 55%, var(--brand-700) 45%);
-    --muted-foreground: color-mix(in oklab, var(--brand-500) 75%, var(--brand-200) 25%);
-    --primary: color-mix(in oklab, var(--brand-500) 60%, var(--brand-200) 40%);
+    --card: color-mix(in oklab, var(--brand-900) 78%, var(--brand-700) 22%);
+    --secondary: color-mix(in oklab, var(--brand-900) 80%, var(--brand-700) 20%);
+    --muted-foreground: color-mix(in oklab, var(--brand-200) 55%, var(--brand-500) 20%);
+    --primary: color-mix(in oklab, var(--brand-200) 92%, var(--brand-500) 8%);
     --primary-foreground: var(--brand-900);
-    --accent: color-mix(in oklab, var(--brand-700) 55%, var(--brand-900) 45%);
+    --accent: color-mix(in oklab, var(--brand-700) 45%, var(--brand-900) 55%);
     --accent-foreground: var(--brand-200);
     --destructive: oklch(0.704 0.19 22.2);
-    --border: oklch(1 0 0 / 0.14);
+    --border: oklch(1 0 0 / 0.1);
   }
 }
 * { box-sizing: border-box; }
@@ -83,11 +83,11 @@ const WIDGET_CSS = `
 .chat-md th, .chat-md td { border: 1px solid var(--border); padding: 4px 8px; text-align: start; }
 .chat-md th { background: var(--secondary); font-weight: 600; }
 /* Chat interactive states — MIRROR of the .csw-root block in src/styles/globals.css. Keep in sync. */
-.csw-root { --csw-focus: color-mix(in srgb, var(--primary, #1B3C53) 55%, transparent); }
+.csw-root { --csw-focus: color-mix(in srgb, var(--primary, #1C1917) 55%, transparent); }
 .csw-root .csw-chip, .csw-root .csw-cite, .csw-root .csw-iconbtn, .csw-root .csw-send, .csw-root .csw-ghost, .csw-root .csw-jump {
   transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 140ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease, opacity 150ms ease;
 }
-.csw-root .csw-chip:hover { transform: translateY(-1px); border-color: var(--primary, #1B3C53); }
+.csw-root .csw-chip:hover { transform: translateY(-1px); border-color: var(--primary, #1C1917); }
 .csw-root .csw-ghost:hover { transform: translateY(-1px); background: var(--secondary, #f1f5f9); }
 .csw-root .csw-iconbtn:hover { background: var(--secondary, #f1f5f9); }
 .csw-root .csw-cite { box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground, #0f172a) 6%, transparent); }
@@ -95,7 +95,7 @@ const WIDGET_CSS = `
 .csw-root .csw-chip:active, .csw-root .csw-ghost:active { transform: scale(0.97); }
 .csw-root .csw-send:active { transform: scale(0.92); }
 .csw-root .csw-jump:hover { background: var(--secondary, #f1f5f9); box-shadow: 0 6px 18px color-mix(in oklab, var(--foreground, #0f172a) 16%, transparent); }
-.csw-root .csw-composer:focus-within { border-color: var(--primary, #1B3C53); box-shadow: 0 0 0 3px var(--csw-focus); }
+.csw-root .csw-composer:focus-within { border-color: var(--primary, #1C1917); box-shadow: 0 0 0 3px var(--csw-focus); }
 .csw-root :focus-visible { outline: 2px solid var(--csw-focus); outline-offset: 2px; }
 .csw-root :focus:not(:focus-visible) { outline: none; }
 @media (prefers-reduced-motion: reduce) {
