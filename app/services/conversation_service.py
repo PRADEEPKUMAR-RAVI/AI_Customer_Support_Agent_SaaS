@@ -171,6 +171,13 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     if tenant is None or tenant.status != "active":
         return [ErrorEvent(code="tenant_suspended", message="This workspace is unavailable."),
                 DoneEvent(turn_id="", ticket_state="")]
+    # Industry is chosen in onboarding step 1, not at signup — the widget key exists (and is
+    # publicly reachable) from the moment of signup, before that. Every downstream engine call
+    # (schema resolution, prompts, verification) assumes a valid industry, so this is the one
+    # place to stop a not-yet-configured tenant cleanly instead of a 500 deep in the tool loop.
+    if tenant.industry is None:
+        return [ErrorEvent(code="setup_incomplete", message="This workspace hasn't finished setup yet."),
+                DoneEvent(turn_id="", ticket_state="")]
     cfg = (await session.execute(select(AgentSettings))).scalar_one_or_none()
     cfg = cfg.config if cfg else {}
 

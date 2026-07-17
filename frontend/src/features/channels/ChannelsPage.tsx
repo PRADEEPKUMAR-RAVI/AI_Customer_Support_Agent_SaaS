@@ -7,7 +7,7 @@
  *   DELETE /admin/allowed-domains/{id}
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,7 +27,6 @@ import {
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -54,6 +53,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, unwrap } from "@/lib/api";
+import { usePageBanner } from "@/lib/pageBanner";
 import type { components } from "@/api/generated/schema";
 
 type EmbedSnippet = components["schemas"]["EmbedSnippetResponse"];
@@ -66,18 +66,21 @@ const EMBED_QUERY_KEY = ["admin", "embed-snippet"] as const;
 const DOMAINS_QUERY_KEY = ["admin", "allowed-domains"] as const;
 
 export function ChannelsPage() {
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Channels & embed",
+      subtitle:
+        "Drop the assistant onto your site, manage the widget key, and control which domains are allowed to load it.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, []);
+
   return (
-    <>
-      <PageHeader
-        title="Channels & embed"
-        description="Drop the assistant onto your site, manage the widget key, and control which domains are allowed to load it."
-      />
-      <div className="space-y-6">
-        <EmbedSnippetCard />
-        <WidgetKeyCard />
-        <AllowedDomainsCard />
-      </div>
-    </>
+    <div className="space-y-6">
+      <EmbedSnippetCard />
+      <WidgetKeyCard />
+      <AllowedDomainsCard />
+    </div>
   );
 }
 
@@ -315,8 +318,8 @@ const addDomainSchema = z.object({
     .trim()
     .min(1, "Enter a domain")
     .regex(
-      /^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i,
-      "Enter a bare domain like app.example.com (no https:// or path)"
+      /^((\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}|localhost)(:\d+)?$/i,
+      "Enter a bare domain like app.example.com (no https:// or path) — localhost is fine for local testing"
     ),
 });
 

@@ -130,8 +130,9 @@ def get_schema(industry: Industry, record_type: str) -> RecordSchema | None:
     return INDUSTRY_SCHEMAS.get(industry, {}).get(record_type)
 
 
-def max_verify_attempts(industry: Industry) -> int:
-    """Healthcare = 1 (no retry); everyone else = 3 (§4.8.2)."""
+def max_verify_attempts(industry: Industry | None) -> int:
+    """Healthcare = 1 (no retry); everyone else — including a tenant that hasn't chosen an
+    industry yet — = 3 (§4.8.2)."""
     if industry is Industry.HEALTHCARE:
         return TenantDefaults.VERIFY_MAX_ATTEMPTS_HEALTHCARE
     return TenantDefaults.VERIFY_MAX_ATTEMPTS

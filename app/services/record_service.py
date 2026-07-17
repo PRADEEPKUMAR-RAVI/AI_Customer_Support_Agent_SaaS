@@ -54,7 +54,7 @@ class UploadResolver(Resolver):
     async def fetch(self, tenant_id: str, record_type: str, key: str) -> RawRecord | _NotFound:
         async with with_tenant(tenant_id) as session:
             tenant = await session.get(Tenant, uuid.UUID(str(tenant_id)))
-            schema = get_schema(Industry(tenant.industry), record_type) if tenant else None
+            schema = get_schema(Industry(tenant.industry), record_type) if tenant and tenant.industry else None
 
             conditions = [RecordRow.key == str(key)]
             if schema is not None:

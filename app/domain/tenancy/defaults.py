@@ -11,7 +11,11 @@ from app.domain.escalation.reasons import EscalationReason
 from app.domain.records.schemas import Industry, max_verify_attempts
 
 
-def default_agent_settings(industry: Industry) -> dict:
+def default_agent_settings(industry: Industry | None) -> dict:
+    """`industry` may be `None` at signup time now — it's chosen in onboarding step 1, not at
+    signup — so every industry-dependent default here must tolerate that (only
+    `verify_max_attempts` actually varies by industry, and `max_verify_attempts(None)` already
+    falls through to the non-healthcare default)."""
     return {
         "persona": "A helpful, concise customer-support assistant.",
         "welcome_message": "Hi! How can I help you today?",  # [A6]

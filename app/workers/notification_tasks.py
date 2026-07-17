@@ -41,47 +41,48 @@ def _email_html(*, heading: str, paragraphs: list[str], cta_label: str, cta_url:
     and a copy-paste fallback link underneath it (the pattern most products use, since some
     clients/spam filters strip or disable the button). Inline styles + table layout only:
     email clients don't load external stylesheets. Colors mirror the app's own light-mode
-    tokens (`src/styles/globals.css`) so the two surfaces read as one product."""
+    tokens (`src/styles/globals.css`) — --brand-200 canvas, --brand-900/--primary navy for the
+    logo mark/heading/CTA — so the two surfaces read as one product."""
     body_html = "".join(
-        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#3a3530;">{p}</p>'
+        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#1f2937;">{p}</p>'
         for p in paragraphs
     )
     return f"""<!doctype html>
 <html>
-  <body style="margin:0;padding:32px 16px;background:#e8e7e2;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <body style="margin:0;padding:32px 16px;background:#eff3ff;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;border:1px solid #e2ded6;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;border:1px solid #e5e7eb;">
             <tr>
               <td style="padding:28px 32px 0;">
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="width:32px;height:32px;border-radius:8px;background:#1c1917;text-align:center;">
-                      <span style="display:inline-block;line-height:32px;color:#e8e7e2;font-size:15px;font-weight:700;">R</span>
+                    <td style="width:32px;height:32px;border-radius:8px;background:#0d3b66;text-align:center;">
+                      <span style="display:inline-block;line-height:32px;color:#ffffff;font-size:15px;font-weight:700;">R</span>
                     </td>
-                    <td style="padding-left:10px;font-size:15px;font-weight:600;color:#1c1917;">Relay</td>
+                    <td style="padding-left:10px;font-size:15px;font-weight:600;color:#0d3b66;">Relay</td>
                   </tr>
                 </table>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 32px 8px;">
-                <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#1c1917;">{heading}</h1>
+                <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#0d3b66;">{heading}</h1>
                 {body_html}
               </td>
             </tr>
             <tr>
               <td style="padding:8px 32px 32px;">
-                <a href="{cta_url}" style="display:inline-block;background:#1c1917;color:#e8e7e2;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px;">{cta_label}</a>
-                <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:#6b6560;">
+                <a href="{cta_url}" style="display:inline-block;background:#0d3b66;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px;">{cta_label}</a>
+                <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:#6b7280;">
                   Or copy and paste this link into your browser:<br>
-                  <span style="word-break:break-all;color:#9c5326;">{cta_url}</span>
+                  <span style="word-break:break-all;color:#0d3b66;">{cta_url}</span>
                 </p>
               </td>
             </tr>
           </table>
-          <p style="margin:20px 0 0;font-size:11px;color:#9a948d;">Relay &middot; AI customer support, wired to your own data.</p>
+          <p style="margin:20px 0 0;font-size:11px;color:#6b7280;">Relay &middot; AI customer support, wired to your own data.</p>
         </td>
       </tr>
     </table>

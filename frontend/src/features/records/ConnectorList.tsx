@@ -191,9 +191,9 @@ export function ConnectorList({ schemas }: { schemas: RecordSchemaOut[] }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          Live sources the AI reads from on every lookup. Keep several per record type, but only one
-          is active at a time — it overrides the uploaded dataset; pause it to fall back.
+        <p className="text-xs text-muted-foreground">
+          Live sources the AI reads from on every lookup. Only one is active per record type;
+          pause it to fall back to the uploaded dataset.
         </p>
         <Button onClick={openCreate}>
           <Plus className="size-4" />

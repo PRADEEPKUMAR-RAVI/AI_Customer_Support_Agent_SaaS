@@ -1,5 +1,7 @@
 /** FE-Auth — `/reset`. The reset link lands here with `?token=...`. Sets a new password via the
- * single-use token, then sends the user to sign in. */
+ * single-use token, then sends the user to sign in. Same split-card shell as `/signup`, `/login`,
+ * and `/forgot` (`AuthBrand.tsx`) — a user following a reset-password email link shouldn't land
+ * on a visually plainer page than the rest of the auth flow. */
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
@@ -11,14 +13,6 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Form,
   FormControl,
   FormField,
@@ -28,6 +22,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { api, unwrap } from "@/lib/api";
+
+import { AuthSplitShell } from "./AuthBrand";
 
 const resetSchema = z
   .object({
@@ -70,50 +66,54 @@ export function ResetPage() {
 
   if (!token) {
     return (
-      <Card>
-        <CardHeader className="items-center text-center">
-          <div className="mx-auto mb-1 grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
-            <AlertCircle className="size-6" />
+      <AuthSplitShell>
+        <div className="space-y-6">
+          <div className="relative grid size-14 place-items-center">
+            <div aria-hidden className="absolute size-14 rounded-full bg-destructive/25 blur-md" />
+            <div className="relative grid size-14 place-items-center rounded-full border-2 border-destructive/40 bg-background text-destructive">
+              <AlertCircle className="size-6" />
+            </div>
           </div>
-          <CardTitle className="text-xl">Invalid reset link</CardTitle>
-          <CardDescription>
-            This link is missing its token. Request a new one to continue.
-          </CardDescription>
-        </CardHeader>
-        <CardFooter>
-          <Button asChild variant="outline" className="w-full">
+          <div className="space-y-2">
+            <h1 className="text-xl font-semibold tracking-tight">Invalid reset link</h1>
+            <p className="text-xs text-muted-foreground">
+              This link is missing its token. Request a new one to continue.
+            </p>
+          </div>
+          <Button asChild size="lg" variant="outline" className="w-full">
             <Link to="/forgot">Request a new link</Link>
           </Button>
-        </CardFooter>
-      </Card>
+        </div>
+      </AuthSplitShell>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Choose a new password</CardTitle>
-        <CardDescription>Set a new password for your account.</CardDescription>
-      </CardHeader>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
-          <CardContent className="grid gap-4">
+    <AuthSplitShell>
+      <div className="space-y-6">
+        <div className="space-y-1.5">
+          <h1 className="text-xl font-semibold tracking-tight">Choose a new password</h1>
+          <p className="text-xs text-muted-foreground">Set a new password for your account.</p>
+        </div>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))} className="space-y-4">
             <FormField
               control={form.control}
               name="new_password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>New password</FormLabel>
+                  <FormLabel className="text-xs">New password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="••••••••"
                       autoComplete="new-password"
-                      className="placeholder:text-base placeholder:font-bold placeholder:tracking-[0.2em] placeholder:text-foreground/40"
+                      className="text-sm placeholder:text-base placeholder:font-bold placeholder:tracking-[0.2em] placeholder:text-foreground/40"
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage className="text-xs" />
                 </FormItem>
               )}
             />
@@ -122,34 +122,39 @@ export function ResetPage() {
               name="confirm"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirm password</FormLabel>
+                  <FormLabel className="text-xs">Confirm password</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder="••••••••"
                       autoComplete="new-password"
-                      className="placeholder:text-base placeholder:font-bold placeholder:tracking-[0.2em] placeholder:text-foreground/40"
+                      className="text-sm placeholder:text-base placeholder:font-bold placeholder:tracking-[0.2em] placeholder:text-foreground/40"
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage className="text-xs" />
                 </FormItem>
               )}
             />
-          </CardContent>
-          <CardFooter className="mt-6 flex-col gap-3">
-            <Button type="submit" className="w-full" disabled={mutation.isPending}>
+
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full shadow-lg shadow-brand-900/20 transition-shadow hover:shadow-xl hover:shadow-brand-900/25"
+              disabled={mutation.isPending}
+            >
               {mutation.isPending ? "Updating…" : "Update password"}
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Remembered it?{" "}
-              <Link to="/login" className="font-medium text-primary hover:underline">
-                Sign in
-              </Link>
-            </p>
-          </CardFooter>
-        </form>
-      </Form>
-    </Card>
+          </form>
+        </Form>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Remembered it?{" "}
+          <Link to="/login" className="font-medium text-foreground hover:text-primary">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </AuthSplitShell>
   );
 }

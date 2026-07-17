@@ -74,7 +74,7 @@ async def signup(body: SignupRequest) -> dict:
     try:
         async with SessionLocal() as session:
             async with session.begin():
-                tenant = Tenant(name=body.company_name, industry=body.industry.value, status="active")
+                tenant = Tenant(name=body.company_name, industry=None, status="active")
                 session.add(tenant)
                 await session.flush()  # obtain tenant.id
                 await set_tenant_guc(session, tenant.id)  # subsequent inserts auto-scope
@@ -85,7 +85,9 @@ async def signup(body: SignupRequest) -> dict:
                     email_verified=False,
                 )
                 session.add(staff)
-                session.add(AgentSettings(config=default_agent_settings(body.industry)))
+                # No industry yet — seeded with the industry-agnostic defaults; `verify_max_attempts`
+                # is re-derived once the admin actually picks one (see the industry-set endpoint).
+                session.add(AgentSettings(config=default_agent_settings(None)))
                 session.add(WidgetKey(key=mint_widget_key()))
                 await session.flush()
                 verify_token = create_token(

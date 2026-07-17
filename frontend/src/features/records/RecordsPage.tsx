@@ -2,15 +2,16 @@
  * Datasets are validated synchronously by the backend (the FE renders that report verbatim);
  * connectors pull records live from an API or database. Mounted at `/admin/records`. */
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { NoAccessState } from "@/components/no-access-state";
-import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/app/providers";
+import { usePageBanner } from "@/lib/pageBanner";
 import { hasPermission } from "@/lib/rbac";
 
 import { getRecordsSchema, listDatasets } from "./api";
@@ -22,17 +23,18 @@ export function RecordsPage() {
   const schemaQ = useQuery({ queryKey: ["records", "schema"], queryFn: getRecordsSchema });
   const datasetsQ = useQuery({ queryKey: ["records", "datasets"], queryFn: listDatasets });
 
-  const header = (
-    <PageHeader
-      title="Records"
-      description="Upload or connect the customer data your AI verifies against, like orders, warranties, and appointments. Nothing is shared with other businesses on the platform."
-    />
-  );
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Records",
+      subtitle:
+        "Upload or connect the customer data your AI verifies against, like orders, warranties, and appointments.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, []);
 
   if (role && !hasPermission(role, "records:manage")) {
     return (
       <div>
-        {header}
         <NoAccessState description="Managing customer records requires the admin role. Ask an admin if you need access." />
       </div>
     );
@@ -45,8 +47,6 @@ export function RecordsPage() {
 
   return (
     <div>
-      {header}
-
       {schemaQ.isError ? (
         <ErrorState
           title="Couldn't load the record schema"

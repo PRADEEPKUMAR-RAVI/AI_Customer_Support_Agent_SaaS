@@ -14,8 +14,8 @@ import { Search, SearchX, X } from "lucide-react";
 import type { components } from "@/api/generated/schema";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, unwrap } from "@/lib/api";
+import { usePageBanner } from "@/lib/pageBanner";
 
 type Ticket = components["schemas"]["TicketResponse"];
 type TicketPage = components["schemas"]["Page_TicketResponse_"];
@@ -94,6 +95,14 @@ function humanize(v: string): string {
 export function TicketsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Tickets",
+      subtitle: "Browse, filter, and review every conversation the assistant has opened.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, []);
 
   const status = searchParams.get("status") ?? "";
   const priority = searchParams.get("priority") ?? "";
@@ -187,13 +196,29 @@ export function TicketsPage() {
           const primary = t.contact_email ?? "Anonymous visitor";
           const record = t.linked_record_type
             ? `${humanize(t.linked_record_type)} · ${t.linked_record_key ?? "—"}`
-            : t.tags.length
-              ? t.tags.map((tg) => tg.name).join(", ")
-              : "No linked record";
+            : "No linked record";
           return (
             <div className="flex min-w-0 max-w-[22rem] flex-col gap-0.5">
               <span className="truncate font-medium text-foreground">{primary}</span>
               <span className="truncate text-xs text-muted-foreground">{record}</span>
+            </div>
+          );
+        },
+      },
+      {
+        id: "tags",
+        header: "Tags",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const t = row.original.tags;
+          if (!t.length) return <span className="text-xs text-muted-foreground">—</span>;
+          return (
+            <div className="flex max-w-[14rem] flex-wrap gap-1">
+              {t.map((tg) => (
+                <Badge key={tg.name} variant="secondary">
+                  {tg.name}
+                </Badge>
+              ))}
             </div>
           );
         },
@@ -261,18 +286,13 @@ export function TicketsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Tickets"
-        description="Every conversation the assistant has opened. Filter by state, priority, or language, then open a ticket to review the transcript and take over."
-      />
-
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <div className="relative w-full md:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchDraft}
             onChange={(e) => setSearchDraft(e.target.value)}
-            placeholder="Filter by tag…"
+            placeholder="Filter by tag"
             aria-label="Filter tickets by tag"
             className="pl-9"
           />
@@ -339,7 +359,7 @@ export function TicketsPage() {
         </div>
       </div>
 
-      <p className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
+      <p className="text-sm font-semibold text-muted-foreground tabular-nums" aria-live="polite">
         {isLoading
           ? "Loading tickets…"
           : data

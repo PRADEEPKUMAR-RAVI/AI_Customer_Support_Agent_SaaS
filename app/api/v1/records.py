@@ -130,6 +130,9 @@ async def _industry(session: AsyncSession, tenant_id: str) -> Industry:
     tenant = await session.get(Tenant, uuid.UUID(tenant_id))
     if tenant is None:
         raise AppError(status_code=404, title="Tenant not found", code="tenant_not_found")
+    if tenant.industry is None:
+        raise AppError(status_code=409, title="Choose your industry first",
+                       code="industry_not_set")
     return Industry(tenant.industry)
 
 

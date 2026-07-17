@@ -3,7 +3,7 @@
  * tokens so light/dark work. Empty/unavailable states are handled per card. */
 
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -18,7 +18,6 @@ import {
 } from "recharts";
 import { Bot, Coins, Languages, MessagesSquare, ShieldAlert, Tags, Timer } from "lucide-react";
 
-import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { NoAccessState } from "@/components/no-access-state";
@@ -32,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { usePageBanner } from "@/lib/pageBanner";
 import { CHART_CHROME, CHART_COLORS, ESCALATION_REASON_COLOR } from "@/styles/tokens";
 import { cn } from "@/lib/utils";
 
@@ -186,10 +186,21 @@ export function AnalyticsPage() {
     </Select>
   );
 
+  const canRead = !role || hasPermission(role, "analytics:read");
+
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Analytics",
+      subtitle: canRead
+        ? "How autonomously the assistant resolves conversations, and what it costs."
+        : "Resolution, latency, and cost for your account.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, [canRead]);
+
   if (role && !hasPermission(role, "analytics:read")) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Analytics" description="Resolution, latency, and cost for your account." />
         <NoAccessState description="Your role doesn't include the analytics:read permission. Ask an admin if you need it." />
       </div>
     );
@@ -213,11 +224,7 @@ export function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Analytics"
-        description="How autonomously the assistant resolves conversations, and what it costs."
-        actions={rangeControl}
-      />
+      <div className="flex justify-end">{rangeControl}</div>
 
       {/* KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

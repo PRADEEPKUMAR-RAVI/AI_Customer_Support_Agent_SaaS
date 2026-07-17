@@ -113,10 +113,10 @@ export function AppRouter() {
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot" element={<ForgotPage />} />
+        <Route path="/reset" element={<ResetPage />} />
 
         <Route element={<AuthLayout />}>
           <Route path="/verify" element={<VerifyPage />} />
-          <Route path="/reset" element={<ResetPage />} />
         </Route>
       </Route>
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class TenantOut(BaseModel):
     id: str
     name: str
-    industry: str
+    industry: str | None  # None until the admin sets it in onboarding step 1
     status: str  # active|suspended
 
 

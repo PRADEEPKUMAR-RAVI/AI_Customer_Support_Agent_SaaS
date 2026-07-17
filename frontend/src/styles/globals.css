@@ -12,14 +12,17 @@
    Design tokens — semantic. Light = :root, dark = .dark.
    "Relay" identity: a relay is a switch that only closes once a control signal
    clears its threshold — the same shape as this product's grounding gate and
-   its AI→human handoff. The palette reads as instrument-panel hardware, not
-   another near-black+neon AI dashboard: a graphite ink, a cool steel canvas,
-   and a copper signal color reserved for AI/automation states — never the
-   primary action color, so "the AI is working" and "click here" never blur.
-     --brand-900 #1C1917  ink       → primary actions, nav, text, focus rings
-     --brand-700 #5A3D24  bronze    → informational accents, dark elevation
-     --brand-500 #9C5326  copper    → AI/automation signal, muted text
-     --brand-200 #E8E7E2  steel     → canvases, subtle fills, text-on-dark
+   its AI→human handoff. --brand-900 is the one primary/action color (a deep
+   navy, picked over the rest of the ramp) — every button, link, focus ring,
+   and the onboarding wizard's left rail all use it directly. --brand-700
+   downward are ColorBrewer's sequential "Blues", read by VALUE (light → dark)
+   for informational accents and canvases, never competing with brand-900 for
+   attention.
+     --brand-900 #0D3B66  navy      → THE primary/action color, ink/text, focus rings, onboarding rail
+     --brand-700 #3182BD  dark      → informational accents, secondary elevation
+     --brand-500 #9ECAE1  mid       → AI/automation signal (never the button color)
+     --brand-300 #C6DBEF  light     → secondary/sidebar fills
+     --brand-200 #EFF3FF  lightest  → canvas tint, subtle backgrounds
    The two exceptions are --success/--destructive (green/red) — status needs a
    hue-independent signal — and the data-viz --chart-* set, which stays its own
    validated, colorblind-checked palette (a monochrome ramp can't carry 8
@@ -30,25 +33,29 @@
 :root {
   --radius: 0.5rem;
 
-  --brand-900: #1c1917;
-  --brand-700: #5a3d24;
-  --brand-500: #9c5326;
-  --brand-200: #e8e7e2;
+  --brand-900: #0d3b66;
+  --brand-700: #3182bd;
+  --brand-500: #9ecae1;
+  --brand-300: #c6dbef;
+  --brand-200: #eff3ff;
+  /* The primary/action color — every button, link, and focus ring across the whole app
+     (website, signup, login, forgot-password, console) gets maximal use of this exact hex. */
+  --brand-primary: var(--brand-900);
 
-  --background: color-mix(in oklab, var(--brand-200) 22%, white); /* cool steel canvas, a whisper of the brand gray */
+  --background: var(--brand-200); /* pale blue canvas — already a whisper-light tint on its own */
   --foreground: var(--brand-900);
   --card: oklch(1 0 0); /* white — cards lift off the canvas */
   --card-foreground: var(--brand-900);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--brand-900);
 
-  --primary: var(--brand-900);
-  --primary-foreground: var(--brand-200);
-  --secondary: var(--brand-200);
+  --primary: var(--brand-primary);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--brand-300);
   --secondary-foreground: var(--brand-900);
-  --muted: var(--brand-200);
-  /* Neutral warm-grey, deliberately NOT the copper brand-500 — copper is reserved for the
-     AI-accent signal; used as running body/hint/label text everywhere, it read as "brown". */
+  --muted: var(--brand-300);
+  /* Neutral warm-grey, deliberately not a brand blue — used as running body/hint/label text
+     everywhere; a tinted grey there fights the primary blue for the reader's attention. */
   --muted-foreground: oklch(0.47 0.015 55);
   --accent: color-mix(in oklab, var(--brand-500) 14%, white);
   --accent-foreground: var(--brand-900);
@@ -58,7 +65,7 @@
      same brand family, never the button color, so it never reads as "click
      here." */
   --ai-accent: var(--brand-500);
-  --ai-accent-foreground: oklch(1 0 0);
+  --ai-accent-foreground: var(--brand-900);
 
   --destructive: oklch(0.577 0.245 27.3); /* red-600 */
   --destructive-foreground: oklch(0.985 0 0);
@@ -67,22 +74,50 @@
   --warning: oklch(0.769 0.16 70); /* amber-500 — needs dark text */
   --warning-foreground: oklch(0.279 0.03 265);
   --info: var(--brand-700);
-  --info-foreground: var(--brand-200);
+  --info-foreground: oklch(1 0 0);
 
   --border: color-mix(in oklab, var(--brand-500) 30%, white);
   --input: color-mix(in oklab, var(--brand-500) 30%, white);
-  /* Same copper hue as --border, just stepped up for visibility — a focused field emphasizes
-     its own border color instead of introducing an unrelated one. */
-  --ring: color-mix(in oklab, var(--brand-500) 55%, white 45%);
+  --ring: var(--brand-primary);
 
-  --sidebar: color-mix(in oklab, var(--brand-200) 45%, white); /* steel-tinted rail, distinct from the white cards */
+  /* A second, cooler-grey blue family — used only for auxiliary/informational panels (security
+     notices, rule lists) that need their own visual identity distinct from the primary-action
+     blue ramp above, so those panels read as "supporting content" rather than another CTA. */
+  --accent-navy: #0d3b66;
+  --accent-navy-foreground: oklch(1 0 0);
+  --accent-slate: #7f9db1;
+  --accent-slate-foreground: oklch(1 0 0);
+  --accent-powder: #b4d6e3;
+  --accent-powder-foreground: var(--brand-900);
+
+  --sidebar: var(--brand-300); /* same tint as the signup page's pitch panel (--secondary) */
   --sidebar-foreground: var(--brand-900);
-  --sidebar-primary: var(--brand-900);
-  --sidebar-primary-foreground: var(--brand-200);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: color-mix(in oklab, var(--brand-500) 14%, white);
   --sidebar-accent-foreground: var(--brand-900);
   --sidebar-border: color-mix(in oklab, var(--brand-500) 30%, white);
-  --sidebar-ring: color-mix(in oklab, var(--brand-500) 55%, white 45%);
+  --sidebar-ring: var(--brand-primary);
+  /* Hint/secondary sidebar text — a real grey, not a translucent step of --sidebar-foreground
+     (which reads as "faded white/blue" rather than "grey" once the rail itself is a colored
+     surface — see the onboarding rail below). */
+  --sidebar-muted-foreground: var(--muted-foreground);
+
+  /* The onboarding wizard's left rail (`app-sidebar.tsx`'s `OnboardingStepList` override) —
+     separate from --sidebar-* above because it needs a DIFFERENT answer per theme: a solid navy
+     identity in light mode, but a neutral dark surface in dark mode (see the dark-mode note
+     below — blue there is only ever a small accent, never a wash). */
+  --onboarding-rail: var(--brand-900);
+  --onboarding-rail-foreground: var(--brand-200);
+  --onboarding-rail-muted-foreground: oklch(0.78 0.01 260);
+  --onboarding-rail-primary: var(--brand-200);
+  --onboarding-rail-primary-foreground: var(--brand-900);
+  /* A translucent white wash, not a separate saturated hue — the active-step highlight sits on
+     top of the SAME navy, so it reads as "lifted" rather than a mismatched color patch. */
+  --onboarding-rail-accent: oklch(1 0 0 / 12%);
+  --onboarding-rail-accent-foreground: var(--onboarding-rail-foreground);
+  --onboarding-rail-border: oklch(1 0 0 / 15%);
+  --onboarding-rail-ring: oklch(1 0 0 / 45%);
 
   /* Data-viz categorical (validated, colorblind-checked) — light surface. Kept
      out of the brand ramp on purpose — see header note. */
@@ -97,31 +132,34 @@
 }
 
 .dark {
-  --brand-900: #1c1917;
-  --brand-700: #5a3d24;
-  --brand-500: #9c5326;
-  --brand-200: #e8e7e2;
+  --brand-900: #0d3b66;
+  --brand-700: #3182bd;
+  --brand-500: #9ecae1;
+  --brand-300: #c6dbef;
+  --brand-200: #eff3ff;
+  --brand-primary: var(--brand-900); /* same brand/action color as light mode — doesn't invert */
 
-  /* True-grey layered elevation, not a flat invert: background is the darkest step, the
-     sidebar sits a touch darker still (recessed rail), and cards/popovers raise a step
-     lighter — so hierarchy reads from background shade alone, no heavy borders needed. */
-  --background: color-mix(in oklab, var(--brand-900) 92%, black 8%);
-  --foreground: var(--brand-200);
-  --card: color-mix(in oklab, var(--brand-900) 78%, var(--brand-700) 22%); /* a raised step lighter */
-  --card-foreground: var(--brand-200);
-  --popover: color-mix(in oklab, var(--brand-900) 70%, var(--brand-700) 30%);
-  --popover-foreground: var(--brand-200);
+  /* Dark mode is a neutral charcoal surface, NOT a monochrome navy wash — the brand blue is an
+     accent (primary actions, focus rings, the AI signal, active nav), and it only reads as a
+     signal if the surfaces around it stay achromatic. Standard grey elevation ramp: background
+     darkest, sidebar a touch darker still (recessed rail), cards/popovers a step lighter. */
+  --background: oklch(0.16 0.004 260);
+  --foreground: oklch(0.95 0.004 260);
+  --card: oklch(0.21 0.005 260); /* a raised step lighter */
+  --card-foreground: oklch(0.95 0.004 260);
+  --popover: oklch(0.19 0.005 260);
+  --popover-foreground: oklch(0.95 0.004 260);
 
-  --primary: color-mix(in oklab, var(--brand-200) 92%, var(--brand-500) 8%); /* near-white ink, not copper, on the dark canvas */
-  --primary-foreground: var(--brand-900);
-  --secondary: color-mix(in oklab, var(--brand-900) 80%, var(--brand-700) 20%);
-  --secondary-foreground: var(--brand-200);
-  --muted: color-mix(in oklab, var(--brand-900) 80%, var(--brand-700) 20%);
+  --primary: var(--brand-primary);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.27 0.006 260);
+  --secondary-foreground: oklch(0.95 0.004 260);
+  --muted: oklch(0.27 0.006 260);
   --muted-foreground: oklch(0.72 0.015 55);
-  --accent: color-mix(in oklab, var(--brand-700) 45%, var(--brand-900) 55%);
-  --accent-foreground: var(--brand-200);
+  --accent: oklch(0.31 0.008 260);
+  --accent-foreground: oklch(0.95 0.004 260);
 
-  --ai-accent: color-mix(in oklab, var(--brand-500) 78%, var(--brand-200) 22%); /* brighter copper for the dark canvas */
+  --ai-accent: var(--brand-500); /* light brand blue reads clearly against the neutral surface */
   --ai-accent-foreground: var(--brand-900);
 
   --destructive: oklch(0.704 0.19 22.2); /* red-500 */
@@ -130,21 +168,43 @@
   --success-foreground: oklch(0.129 0.02 265);
   --warning: oklch(0.828 0.19 84); /* amber-400 */
   --warning-foreground: oklch(0.129 0.02 265);
-  --info: color-mix(in oklab, var(--brand-700) 55%, var(--brand-200) 45%);
-  --info-foreground: var(--brand-900);
+  --info: var(--brand-700);
+  --info-foreground: oklch(1 0 0);
 
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 12%);
-  --ring: color-mix(in oklab, var(--brand-500) 65%, var(--brand-200) 35%);
+  --ring: var(--brand-primary);
 
-  --sidebar: color-mix(in oklab, var(--brand-900) 88%, black 12%);
-  --sidebar-foreground: var(--brand-200);
-  --sidebar-primary: color-mix(in oklab, var(--brand-500) 65%, var(--brand-200) 35%);
-  --sidebar-primary-foreground: var(--brand-900);
-  --sidebar-accent: color-mix(in oklab, var(--brand-700) 45%, var(--brand-900) 55%);
-  --sidebar-accent-foreground: var(--brand-200);
+  /* Brightened a step from the light-mode hex — the raw navy/slate values read as near-black on
+     this dark canvas, and a low-opacity tint of near-black is invisible. */
+  --accent-navy: #4d7aa8;
+  --accent-navy-foreground: oklch(1 0 0);
+  --accent-slate: #9db6c7;
+  --accent-slate-foreground: oklch(0.16 0.004 260);
+  --accent-powder: #cfe4ee;
+  --accent-powder-foreground: oklch(0.16 0.004 260);
+
+  --sidebar: oklch(0.14 0.004 260);
+  --sidebar-foreground: oklch(0.95 0.004 260);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.31 0.008 260);
+  --sidebar-accent-foreground: oklch(0.95 0.004 260);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: color-mix(in oklab, var(--brand-500) 65%, var(--brand-200) 35%);
+  --sidebar-ring: var(--brand-primary);
+  --sidebar-muted-foreground: var(--muted-foreground);
+
+  /* Neutral charcoal, same family as --sidebar above — NOT the light mode's solid navy. Navy
+     stays a small accent (the active-step highlight), never the rail's own surface color. */
+  --onboarding-rail: oklch(0.14 0.004 260);
+  --onboarding-rail-foreground: oklch(0.95 0.004 260);
+  --onboarding-rail-muted-foreground: oklch(0.72 0.01 260);
+  --onboarding-rail-primary: var(--brand-primary);
+  --onboarding-rail-primary-foreground: oklch(1 0 0);
+  --onboarding-rail-accent: oklch(0.31 0.008 260);
+  --onboarding-rail-accent-foreground: oklch(0.95 0.004 260);
+  --onboarding-rail-border: oklch(1 0 0 / 8%);
+  --onboarding-rail-ring: var(--brand-primary);
 
   /* Data-viz categorical — dark surface (re-stepped, not auto-flipped). */
   --chart-1: #3987e5;
@@ -179,6 +239,12 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-ai-accent: var(--ai-accent);
   --color-ai-accent-foreground: var(--ai-accent-foreground);
+  --color-accent-navy: var(--accent-navy);
+  --color-accent-navy-foreground: var(--accent-navy-foreground);
+  --color-accent-slate: var(--accent-slate);
+  --color-accent-slate-foreground: var(--accent-slate-foreground);
+  --color-accent-powder: var(--accent-powder);
+  --color-accent-powder-foreground: var(--accent-powder-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
@@ -193,6 +259,7 @@
 
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
@@ -406,7 +473,7 @@
    (caret=cswblink, entrances=cswfadein, dots=cswbounce already exist above).
    ───────────────────────────────────────────────────────────────────────────── */
 .csw-root {
-  --csw-focus: color-mix(in srgb, var(--primary, #1C1917) 55%, transparent);
+  --csw-focus: color-mix(in srgb, var(--primary, #0d3b66) 55%, transparent);
 }
 .csw-root .csw-chip,
 .csw-root .csw-cite,
@@ -420,7 +487,7 @@
 }
 .csw-root .csw-chip:hover {
   transform: translateY(-1px);
-  border-color: var(--primary, #1C1917);
+  border-color: var(--primary, #0d3b66);
 }
 .csw-root .csw-ghost:hover {
   transform: translateY(-1px);
@@ -448,7 +515,7 @@
   box-shadow: 0 6px 18px color-mix(in oklab, var(--foreground, #0f172a) 16%, transparent);
 }
 .csw-root .csw-composer:focus-within {
-  border-color: var(--primary, #1C1917);
+  border-color: var(--primary, #0d3b66);
   box-shadow: 0 0 0 3px var(--csw-focus);
 }
 .csw-root :focus-visible {

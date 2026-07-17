@@ -42,7 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Workspace",
     items: [
-      { to: "/overview", label: "Overview", icon: LayoutDashboard, keywords: "home dashboard" },
+      { to: "/overview", label: "Dashboard", icon: LayoutDashboard, keywords: "home overview" },
       { to: "/tickets", label: "Tickets", icon: Ticket, permission: "tickets:read", keywords: "conversations cases" },
       { to: "/inbox", label: "Agent inbox", icon: Headset, permission: "agents:queue", keywords: "queue workspace escalations" },
     ],

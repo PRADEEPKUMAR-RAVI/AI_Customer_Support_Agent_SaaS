@@ -3,7 +3,7 @@
  * checklist for admins. Every data source degrades gracefully to em-dashes / empty states so the
  * page always renders, even when analytics or tickets are unavailable or the role can't read them. */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -25,13 +25,15 @@ import { Link, useNavigate } from "react-router-dom";
 import type { components } from "@/api/generated/schema";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
 import { StatTile } from "@/components/stat-tile";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useOnboardingStatus } from "@/features/onboarding/useOnboardingStatus";
 import { api, unwrap } from "@/lib/api";
+import { usePageBanner } from "@/lib/pageBanner";
 import { hasPermission } from "@/lib/rbac";
+import { cn } from "@/lib/utils";
 
 import { useAuth } from "../../app/providers";
 
@@ -111,12 +113,12 @@ const SETUP_STEPS: { to: string; icon: LucideIcon; title: string; description: s
 /** Compact quick-start checklist linking to the core setup surfaces. Admin-facing. */
 function GettingStarted() {
   return (
-    <Card className="shadow-sm">
-      <CardHeader className="border-b bg-secondary/30">
+    <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+      <CardHeader className="gap-2 border-b bg-secondary/30 px-6 py-5">
         <CardTitle>Getting started</CardTitle>
         <CardDescription>Finish setting up your AI support agent.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-0.5 pt-6">
+      <CardContent className="flex flex-col gap-0.5 px-4 py-4">
         {SETUP_STEPS.map((step) => (
           <Link
             key={step.to}
@@ -147,6 +149,10 @@ export function OverviewPage() {
   const canAnalytics = hasPermission(role, "analytics:read");
   const canTickets = hasPermission(role, "tickets:read");
   const canManage = hasPermission(role, "settings:manage");
+  // "Getting started" is a setup checklist — pointless (and confusing) to keep showing once
+  // onboarding is actually done, so it's gated on both the permission and real completion state.
+  const { data: onboarding } = useOnboardingStatus();
+  const showGettingStarted = canManage && onboarding?.completed === false;
 
   const greeting = useMemo(() => {
     const name = nameFromEmail(email);
@@ -271,39 +277,38 @@ export function OverviewPage() {
     []
   );
 
+  useEffect(() => {
+    usePageBanner.getState().set({ title: "Dashboard", subtitle: greeting });
+    return () => usePageBanner.getState().clear();
+  }, [greeting]);
+
   return (
     <>
-      <PageHeader
-        title="Overview"
-        description={greeting}
-        actions={
-          <>
-            {canTickets ? (
-              <Button variant="outline" asChild>
-                <Link to="/tickets">
-                  <Ticket />
-                  Tickets
-                </Link>
-              </Button>
-            ) : null}
-            {canAnalytics ? (
-              <Button asChild>
-                <Link to="/analytics">
-                  <BarChart3 />
-                  Analytics
-                </Link>
-              </Button>
-            ) : null}
-          </>
-        }
-      />
+      <div className="flex flex-wrap items-center justify-end gap-2 pb-6">
+        {canTickets ? (
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/tickets">
+              <Ticket />
+              Tickets
+            </Link>
+          </Button>
+        ) : null}
+        {canAnalytics ? (
+          <Button size="sm" asChild>
+            <Link to="/analytics">
+              <BarChart3 />
+              Analytics
+            </Link>
+          </Button>
+        ) : null}
+      </div>
 
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
             icon={MessagesSquare}
             label="Conversations"
-            value={conversationsValue ?? "—"}
+            value={conversationsValue ?? "0"}
             hint={conversationsHint}
             loading={canAnalytics && overviewQ.isLoading}
             tone="info"
@@ -311,7 +316,7 @@ export function OverviewPage() {
           <StatTile
             icon={Sparkles}
             label="Auto-resolved"
-            value={autoResolvedValue ?? "—"}
+            value={autoResolvedValue ?? "0%"}
             hint="Resolved without a human"
             loading={canAnalytics && overviewQ.isLoading}
             tone="ai"
@@ -319,7 +324,7 @@ export function OverviewPage() {
           <StatTile
             icon={AlertTriangle}
             label="Open escalations"
-            value={escalationsValue ?? "—"}
+            value={escalationsValue ?? "0"}
             hint="Awaiting a human agent"
             loading={canTickets && escalationsQ.isLoading}
             alert={!!escalationsValue && escalationsValue !== "0"}
@@ -327,27 +332,26 @@ export function OverviewPage() {
           <StatTile
             icon={CircleDollarSign}
             label="Total cost"
-            value={costValue ?? "—"}
+            value={costValue ?? formatUsd(0)}
             hint={costHint}
             loading={canAnalytics && costQ.isLoading}
             tone="success"
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <section className="space-y-4 lg:col-span-2">
+        <div className={cn("grid grid-cols-1 gap-6", showGettingStarted && "lg:grid-cols-3")}>
+          <section className={cn("space-y-4", showGettingStarted && "lg:col-span-2")}>
             <div className="flex items-end justify-between gap-4">
               <div className="space-y-1">
                 <h2 className="text-lg font-semibold tracking-tight">Recent conversations</h2>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   The latest tickets across every channel.
                 </p>
               </div>
               {canTickets ? (
-                <Button variant="ghost" size="sm" asChild>
+                <Button variant="ghost" size="sm" className="text-xs" asChild>
                   <Link to="/tickets" className="text-muted-foreground hover:text-foreground">
                     View all
-                    <ArrowRight className="size-3.5" />
                   </Link>
                 </Button>
               ) : null}
@@ -374,7 +378,7 @@ export function OverviewPage() {
             />
           </section>
 
-          {canManage ? <GettingStarted /> : null}
+          {showGettingStarted ? <GettingStarted /> : null}
         </div>
       </div>
     </>

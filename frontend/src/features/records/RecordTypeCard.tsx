@@ -3,7 +3,6 @@
  * renders verbatim (see ValidationReport). Deletes are gated behind a ConfirmDialog. */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,7 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 import {
   deleteDataset,
@@ -101,7 +100,7 @@ export function RecordTypeCard({
           <span className="text-2xl font-semibold tabular-nums">
             {hasData ? rowCount!.toLocaleString() : "—"}
           </span>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {hasData ? "rows uploaded" : "no dataset uploaded"}
           </span>
         </div>
@@ -111,8 +110,9 @@ export function RecordTypeCard({
         ) : null}
 
         <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground">
-            Verify: {verifyFields.length > 0 ? verifyFields.join(" or ") : "none"}
+          <p className="text-xs text-muted-foreground">
+            <span className="font-bold text-foreground">Verify:</span>{" "}
+            {verifyFields.length > 0 ? verifyFields.join(" or ") : "none"}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {returnedFields.length > 0 ? (
@@ -131,26 +131,28 @@ export function RecordTypeCard({
       </CardContent>
 
       <CardFooter className="flex-wrap gap-2 border-t py-4">
+        <Input
+          readOnly
+          value={file?.name ?? ""}
+          placeholder="Click to choose a file"
+          className="min-w-0 flex-1 cursor-pointer text-xs md:text-xs"
+          onClick={() => inputRef.current?.click()}
+        />
         <input
           ref={inputRef}
           type="file"
           accept=".csv,.json,text/csv,application/json"
           aria-label={`Choose a CSV or JSON file for ${label}`}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className={cn(
-            "min-w-0 flex-1 text-sm text-muted-foreground",
-            "file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-secondary-foreground hover:file:bg-secondary/80"
-          )}
+          className="sr-only"
         />
         <Button size="sm" disabled={!file || upload.isPending} onClick={() => upload.mutate()}>
-          <Upload className="size-4" />
           {upload.isPending ? "Uploading…" : "Upload"}
         </Button>
         {hasData ? (
           <ConfirmDialog
             trigger={
               <Button size="sm" variant="outline" disabled={remove.isPending}>
-                <Trash2 className="size-4" />
                 Delete
               </Button>
             }

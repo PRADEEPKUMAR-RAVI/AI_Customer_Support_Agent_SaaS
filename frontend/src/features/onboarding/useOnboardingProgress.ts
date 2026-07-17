@@ -21,7 +21,11 @@ export function useOnboardingProgress() {
 
   const done: Record<StepKey, boolean> = {
     industry: !!tenant?.industry,
-    templates: (datasetsQ.data?.length ?? 0) > 0,
+    // Not data-derived like the others: downloading a template produces no server-side record
+    // (the upload happens later, in "records") — gating this on dataset presence made the step
+    // impossible to pass on its own, since reaching the upload step required passing this one
+    // first. Confirmed the same way "config"/"embed" are: an explicit action (clicking Download).
+    templates: confirmedSteps.has("templates"),
     knowledge: (sourcesQ.data?.length ?? 0) > 0,
     records: (datasetsQ.data?.length ?? 0) > 0,
     config: confirmedSteps.has("config"),

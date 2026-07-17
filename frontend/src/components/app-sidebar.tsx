@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Check, Waypoints } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
@@ -14,7 +15,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { Progress } from "@/components/ui/progress";
 import { STEPS } from "@/features/onboarding/steps";
 import { useOnboardingStore } from "@/features/onboarding/store";
 import { useOnboardingProgress } from "@/features/onboarding/useOnboardingProgress";
@@ -28,23 +28,13 @@ import type { Role } from "@/lib/rbac";
 function OnboardingStepList() {
   const active = useOnboardingStore((s) => s.active);
   const setActive = useOnboardingStore((s) => s.setActive);
-  const { done, completed } = useOnboardingProgress();
+  const { done } = useOnboardingProgress();
 
   const firstIncomplete = STEPS.findIndex((s) => !done[s.key]);
   const frontierIndex = firstIncomplete === -1 ? STEPS.length - 1 : firstIncomplete;
-  const pct = Math.round((completed / STEPS.length) * 100);
 
   return (
     <>
-      <div className="space-y-2 px-3.5 pt-1 pb-3 group-data-[collapsible=icon]:hidden">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium">Setup progress</span>
-          <span className="tabular-nums text-muted-foreground">
-            {completed} / {STEPS.length}
-          </span>
-        </div>
-        <Progress value={pct} aria-label={`Setup ${pct}% complete`} />
-      </div>
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
@@ -65,11 +55,11 @@ function OnboardingStepList() {
                     {isDone ? (
                       <Check className="size-5! text-success" />
                     ) : (
-                      <s.icon className="size-5!" />
+                      <s.icon className="size-5! text-sidebar-foreground" />
                     )}
                     <span className="flex min-w-0 flex-col items-start leading-tight">
-                      <span className="truncate text-sm font-medium">{s.label}</span>
-                      <span className="truncate text-xs text-muted-foreground">{s.hint}</span>
+                      <span className="truncate text-xs font-medium text-sidebar-foreground">{s.label}</span>
+                      <span className="truncate text-[10px] text-sidebar-muted-foreground">{s.hint}</span>
                     </span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -90,7 +80,7 @@ function ConsoleNav({ role, pathname }: { role: Role | null; pathname: string })
         if (items.length === 0) return null;
         return (
           <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-sidebar-muted-foreground">{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {items.map((item) => {
@@ -98,8 +88,8 @@ function ConsoleNav({ role, pathname }: { role: Role | null; pathname: string })
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
-                        <NavLink to={item.to}>
-                          <item.icon />
+                        <NavLink to={item.to} className="text-sidebar-foreground">
+                          <item.icon className="text-sidebar-foreground" />
                           <span>{item.label}</span>
                         </NavLink>
                       </SidebarMenuButton>
@@ -125,15 +115,35 @@ export function AppSidebar() {
   const showOnboardingSteps = role === "admin" && onboarding?.completed === false;
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex items-center gap-2.5 px-1.5 py-1.5">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
+    <Sidebar
+      collapsible="icon"
+      style={
+        {
+          // The same rail design used during onboarding — solid navy in light mode, neutral
+          // charcoal in dark mode — now applied to the console nav too (see --onboarding-rail-*
+          // in globals.css), so the sidebar doesn't change identity once setup finishes.
+          "--sidebar": "var(--onboarding-rail)",
+          "--sidebar-foreground": "var(--onboarding-rail-foreground)",
+          "--sidebar-primary": "var(--onboarding-rail-primary)",
+          "--sidebar-primary-foreground": "var(--onboarding-rail-primary-foreground)",
+          "--sidebar-accent": "var(--onboarding-rail-accent)",
+          "--sidebar-accent-foreground": "var(--onboarding-rail-accent-foreground)",
+          "--sidebar-border": "var(--onboarding-rail-border)",
+          "--sidebar-ring": "var(--onboarding-rail-ring)",
+          "--sidebar-muted-foreground": "var(--onboarding-rail-muted-foreground)",
+        } as CSSProperties
+      }
+    >
+      <SidebarHeader className="border-b border-sidebar-border bg-black/5">
+        <div className="flex items-center gap-2.5 px-1.5 py-3">
+          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
             <Waypoints className="size-4" />
           </div>
           <div className="grid group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-semibold leading-tight tracking-tight">Relay</span>
-            <span className="text-xs leading-tight text-muted-foreground">AI Support Console</span>
+            <span className="text-sm font-semibold leading-tight tracking-tight text-sidebar-foreground">
+              Relay
+            </span>
+            <span className="text-xs leading-tight text-sidebar-muted-foreground">AI Support Console</span>
           </div>
         </div>
       </SidebarHeader>

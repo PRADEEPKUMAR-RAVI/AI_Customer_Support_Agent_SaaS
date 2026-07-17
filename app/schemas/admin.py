@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.domain.records.schemas import Industry
+
 
 class AllowedDomainRequest(BaseModel):
     # A host suffix the widget's Origin is checked against (e.g. "example.com" or
@@ -42,8 +44,15 @@ class EmbedSnippetResponse(BaseModel):
 
 class TenantResponse(BaseModel):
     """Enough for the FE onboarding wizard to know which industry (-> record types/templates)
-    it's working with — nothing here is sensitive to any staff role."""
+    it's working with — nothing here is sensitive to any staff role. `industry` is `None` until
+    the admin sets it in onboarding step 1."""
 
     name: str
-    industry: str
+    industry: str | None
     status: str
+
+
+class SetIndustryRequest(BaseModel):
+    """One-time, immutable: rejected (409) if the tenant's industry is already set."""
+
+    industry: Industry

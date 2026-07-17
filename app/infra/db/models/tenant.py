@@ -18,7 +18,9 @@ class Tenant(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    industry: Mapped[str] = mapped_column(String(32), nullable=False)  # Industry value
+    # Nullable: chosen in onboarding step 1, not at signup — a brand-new tenant has none yet.
+    # Once set it's immutable (no PATCH beyond the one-time set-industry endpoint).
+    industry: Mapped[str | None] = mapped_column(String(32), nullable=True)  # Industry value
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")  # active|suspended
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspend_reason: Mapped[str | None] = mapped_column(String(500))

@@ -37,19 +37,17 @@ import type { components } from "@/api/generated/schema";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
+import { usePageBanner } from "@/lib/pageBanner";
 import { readMe } from "@/lib/useMe";
 import { cn } from "@/lib/utils";
 
@@ -59,7 +57,6 @@ type QueueEntry = components["schemas"]["QueueEntry"];
 type Message = components["schemas"]["MessageOut"];
 type LiveRecord = components["schemas"]["LiveRecordResponse"];
 
-const HEARTBEAT_INTERVAL_MS = 20_000;
 const QUEUE_POLL_INTERVAL_MS = 5_000;
 const CONTEXT_POLL_INTERVAL_MS = 8_000;
 
@@ -103,39 +100,19 @@ export function AgentWorkspacePage() {
   const me = readMe();
   const queryClient = useQueryClient();
 
-  const [available, setAvailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<"reply" | "note">("reply");
   const [composerText, setComposerText] = useState("");
 
-  // --- Presence -------------------------------------------------------------
-  const presence = useMutation({
-    mutationFn: async (status: "available" | "away") =>
-      unwrap(await api.POST("/api/v1/agents/presence", { body: { status } })),
-    onError: (e) => toast.error(errMessage(e)),
-  });
-
+  // Hands the top bar the page title/description in place of the plain breadcrumb, same pattern
+  // as the onboarding wizard — cleared on unmount so leaving restores the default.
   useEffect(() => {
-    if (!available) return undefined;
-    const id = setInterval(() => presence.mutate("available"), HEARTBEAT_INTERVAL_MS);
-    // Backgrounded tabs throttle setInterval and can let the presence TTL lapse — send an
-    // immediate heartbeat on regaining visibility rather than waiting for the next throttled tick.
-    const onVisible = () => {
-      if (document.visibilityState === "visible") presence.mutate("available");
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-    // presence is a stable useMutation object; only `available` should re-arm this.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [available]);
-
-  function togglePresence(next: boolean) {
-    setAvailable(next);
-    presence.mutate(next ? "available" : "away");
-  }
+    usePageBanner.getState().set({
+      title: "Agent workspace",
+      subtitle: "Claim escalations from the live queue and resolve them with full conversation context.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, []);
 
   // --- Queue ----------------------------------------------------------------
   const {
@@ -291,27 +268,6 @@ export function AgentWorkspacePage() {
 
   return (
     <>
-      <PageHeader
-        title="Agent workspace"
-        description="Claim escalations from the live queue and resolve them with full conversation context."
-        actions={
-          <div className="flex items-center gap-3">
-            <StatusBadge value={available ? "available" : "away"} />
-            <div className="flex items-center gap-2">
-              <Switch
-                id="presence"
-                checked={available}
-                onCheckedChange={togglePresence}
-                aria-label="Toggle availability"
-              />
-              <Label htmlFor="presence" className="cursor-pointer text-sm">
-                {available ? "Available" : "Away"}
-              </Label>
-            </div>
-          </div>
-        }
-      />
-
       <div className="grid gap-4 lg:h-[calc(100dvh-12rem)] lg:min-h-[34rem] lg:grid-cols-[300px_minmax(0,1fr)_320px]">
         {/* ── Left: live queue ─────────────────────────────────────────── */}
         <Card className={cn(PANE_CLASS, "h-[24rem]")}>

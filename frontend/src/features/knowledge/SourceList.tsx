@@ -48,7 +48,7 @@ function RowActions({ source }: { source: SourceOut }) {
   const busy = source.status === "ingesting";
 
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex items-center justify-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -149,7 +149,8 @@ const columns: ColumnDef<SourceOut>[] = [
   },
   {
     id: "actions",
-    header: () => <span className="sr-only">Actions</span>,
+    header: "Actions",
+    meta: { align: "center" },
     cell: ({ row }) => <RowActions source={row.original} />,
   },
 ];

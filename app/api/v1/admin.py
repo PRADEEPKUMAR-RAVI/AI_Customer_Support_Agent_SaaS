@@ -28,6 +28,7 @@ from app.schemas.admin import (
     AllowedDomainRequest,
     AllowedDomainResponse,
     EmbedSnippetResponse,
+    SetIndustryRequest,
     TenantResponse,
     WidgetKeyResponse,
 )
@@ -57,6 +58,30 @@ async def get_tenant(
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == uuid.UUID(staff.tenant_id)))
     ).scalar_one()
+    return TenantResponse(name=tenant.name, industry=tenant.industry, status=tenant.status)
+
+
+@router.patch("/tenant/industry", response_model=TenantResponse)
+async def set_industry(
+    body: SetIndustryRequest,
+    session: AsyncSession = Depends(get_db),
+    staff: StaffContext = Depends(require_permission("settings:manage")),
+) -> TenantResponse:
+    """Onboarding step 1 — one-time, immutable. Also re-derives `verify_max_attempts` in
+    agent_settings, which was seeded industry-agnostic at signup (before this was known)."""
+    tenant = (
+        await session.execute(select(Tenant).where(Tenant.id == uuid.UUID(staff.tenant_id)))
+    ).scalar_one()
+    if tenant.industry is not None:
+        raise AppError(status_code=409, title="Industry already set", code="industry_already_set")
+    tenant.industry = body.industry.value
+    settings_row = (await session.execute(select(AgentSettings))).scalar_one_or_none()
+    if settings_row is not None:
+        settings_row.config = {
+            **settings_row.config,
+            "verify_max_attempts": max_verify_attempts(body.industry),
+        }
+    await session.flush()
     return TenantResponse(name=tenant.name, industry=tenant.industry, status=tenant.status)
 
 
@@ -92,7 +117,7 @@ async def patch_settings(
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == uuid.UUID(staff.tenant_id)))
     ).scalar_one()
-    cap = max_verify_attempts(Industry(tenant.industry))
+    cap = max_verify_attempts(Industry(tenant.industry) if tenant.industry else None)
     if "verify_max_attempts" in incoming:
         try:
             incoming["verify_max_attempts"] = max(1, min(int(incoming["verify_max_attempts"]), cap))

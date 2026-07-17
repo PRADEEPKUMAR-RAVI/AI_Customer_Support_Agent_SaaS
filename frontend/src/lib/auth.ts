@@ -72,14 +72,14 @@ export async function logout(): Promise<void> {
 }
 
 /** Mirrors the backend `Industry` enum (`app/domain/records/schemas.py`) — the tenant's one
- * industry for the POC, picked at signup. */
+ * industry for the POC, picked in onboarding step 1 (not at signup — see `IndustryStep` in
+ * `OnboardingPage.tsx`). */
 export type Industry = "retail" | "logistics" | "telecom" | "healthcare" | "travel";
 
 export interface SignupPayload {
   email: string;
   password: string;
   company_name: string;
-  industry: Industry;
 }
 
 /** Turns an RFC7807 (or FastAPI 422 validation) error body into a message safe to show a user —

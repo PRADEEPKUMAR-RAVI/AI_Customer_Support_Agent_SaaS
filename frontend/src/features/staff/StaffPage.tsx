@@ -1,15 +1,14 @@
 /** FE-Staff — admin-only invite/manage staff. Mounted at `/admin/staff`. */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UserPlus, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
@@ -44,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, unwrap } from "@/lib/api";
+import { usePageBanner } from "@/lib/pageBanner";
 import type { components } from "@/api/generated/schema";
 
 type Staff = components["schemas"]["StaffResponse"];
@@ -68,15 +68,23 @@ export function StaffPage() {
     queryFn: async () => unwrap<Staff[]>(await api.GET("/api/v1/admin/staff")),
   });
 
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Staff",
+      subtitle: "Invite teammates and manage who can access the support console.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, []);
+
   const columns = useMemo<ColumnDef<Staff>[]>(
     () => [
       {
         accessorKey: "email",
-        header: "Teammate",
+        header: () => <span className="pl-2">Teammate</span>,
         cell: ({ row }) => {
           const s = row.original;
           return (
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-0.5 pl-2">
               <span className="font-medium text-foreground">{s.email}</span>
               <span className="text-xs text-muted-foreground">
                 {s.email_verified ? "Email verified" : "Invitation pending"}
@@ -104,8 +112,9 @@ export function StaffPage() {
       },
       {
         id: "actions",
-        header: () => <span className="sr-only">Actions</span>,
+        header: "Actions",
         enableSorting: false,
+        meta: { align: "center" },
         cell: ({ row }) => <StaffRowActions staff={row.original} />,
       },
     ],
@@ -114,11 +123,9 @@ export function StaffPage() {
 
   return (
     <>
-      <PageHeader
-        title="Staff"
-        description="Invite teammates and manage who can access the support console."
-        actions={<InviteTeammateDialog />}
-      />
+      <div className="flex justify-end pb-6">
+        <InviteTeammateDialog />
+      </div>
       <DataTable
         columns={columns}
         data={data ?? []}
@@ -193,7 +200,7 @@ function StaffRowActions({ staff }: { staff: Staff }) {
   const busy = update.isPending || resend.isPending;
 
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-center gap-2 pr-2">
       <Select
         value={staff.role}
         disabled={busy}
@@ -295,10 +302,7 @@ function InviteTeammateDialog() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button>
-          <UserPlus />
-          Invite teammate
-        </Button>
+        <Button>Invite teammate</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

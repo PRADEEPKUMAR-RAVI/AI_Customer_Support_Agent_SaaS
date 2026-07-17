@@ -16,24 +16,24 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod";
 import {
   ArrowRight,
   Building2,
-  ClipboardType,
+  CheckCircle2,
   Copy,
   Download,
   FileText,
   Globe,
-  Link2,
   MessageSquare,
   Plus,
   ShieldCheck,
   Trash2,
   Upload,
-  UserPlus,
   Users,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,7 @@ import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { api, unwrap } from "@/lib/api";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, type Industry } from "@/lib/auth";
 import { usePageBanner } from "@/lib/pageBanner";
 import { cn } from "@/lib/utils";
 import type { components } from "@/api/generated/schema";
@@ -89,6 +89,7 @@ import { RECORD_TYPES_BY_INDUSTRY } from "./recordTypes";
 import { STEPS } from "./steps";
 import { useOnboardingStore } from "./store";
 import { useOnboardingProgress } from "./useOnboardingProgress";
+import { useOnboardingStatus } from "./useOnboardingStatus";
 
 type SourceOut = components["schemas"]["SourceOut"];
 type UploadReport = components["schemas"]["DatasetUploadReport"];
@@ -163,13 +164,56 @@ async function downloadTemplate(recordType: string): Promise<void> {
 // ── step 1: industry ─────────────────────────────────────────────────────────────────────────
 
 function IndustryStep({ tenant }: { tenant: Tenant }) {
+  const qc = useQueryClient();
+  const [choice, setChoice] = useState<Industry>("retail");
+
+  const setIndustry = useMutation({
+    mutationFn: async (industry: Industry) =>
+      unwrap(await api.PATCH("/api/v1/admin/tenant/industry", { body: { industry } })),
+    onSuccess: () => {
+      toast.success("Industry set");
+      void qc.invalidateQueries({ queryKey: ["tenant"] });
+    },
+    onError: (err) => toast.error("Couldn't set industry", { description: errMessage(err, "Try again.") }),
+  });
+
+  // Chosen once, here, instead of at signup — immutable afterward (no endpoint to change it).
+  if (!tenant.industry) {
+    return (
+      <div className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          Your industry determines the record types your AI agent can work with. Once selected,
+          it can&apos;t be changed.
+        </p>
+        <div className="grid gap-2 sm:max-w-xs">
+          <Label htmlFor="industry-choice">Industry</Label>
+          <Select value={choice} onValueChange={(v) => setChoice(v as Industry)}>
+            <SelectTrigger id="industry-choice" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(INDUSTRY_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button onClick={() => setIndustry.mutate(choice)} disabled={setIndustry.isPending}>
+          {setIndustry.isPending ? "Saving…" : "Confirm industry"}
+        </Button>
+      </div>
+    );
+  }
+
   const label = INDUSTRY_LABELS[tenant.industry] ?? tenant.industry;
   const recordTypes = RECORD_TYPES_BY_INDUSTRY[tenant.industry] ?? [];
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/40 px-4 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-gradient-to-br from-secondary/50 to-secondary/10 px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+          <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
             <Building2 className="size-5" />
           </div>
           <div>
@@ -179,10 +223,6 @@ function IndustryStep({ tenant }: { tenant: Tenant }) {
         </div>
         <StatusBadge value="ready" />
       </div>
-      <p className="text-sm text-muted-foreground">
-        Your industry determines the record types your AI agent can work with. Once selected, it
-        can&apos;t be changed.
-      </p>
       <p className="text-xs font-medium text-muted-foreground">Supported record types</p>
       <div className="flex flex-wrap gap-2">
         {recordTypes.length ? (
@@ -205,7 +245,13 @@ function IndustryStep({ tenant }: { tenant: Tenant }) {
 
 // ── step 2: templates ────────────────────────────────────────────────────────────────────────
 
-function TemplatesStep({ industry }: { industry: string }) {
+function TemplatesStep({
+  industry,
+  onConfirm,
+}: {
+  industry: string;
+  onConfirm?: () => void;
+}) {
   const recordTypes = RECORD_TYPES_BY_INDUSTRY[industry] ?? [];
   return (
     <div className="space-y-4">
@@ -220,7 +266,7 @@ function TemplatesStep({ industry }: { industry: string }) {
             className="flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3"
           >
             <div className="flex items-center gap-3">
-              <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
+              <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-ai-accent/12 text-ai-accent">
                 <FileText className="size-4" />
               </div>
               <div>
@@ -234,7 +280,10 @@ function TemplatesStep({ industry }: { industry: string }) {
               className="rounded-full"
               aria-label={`Download ${rt} template`}
               title={`Download ${rt} template`}
-              onClick={() => void downloadTemplate(rt)}
+              onClick={() => {
+                void downloadTemplate(rt);
+                onConfirm?.();
+              }}
             >
               <Download className="size-4" />
             </Button>
@@ -249,6 +298,12 @@ function TemplatesStep({ industry }: { industry: string }) {
 
 type KnowledgeKind = "file" | "url" | "paste";
 
+const KNOWLEDGE_KINDS = [
+  { value: "file", label: "File upload" },
+  { value: "url", label: "URL" },
+  { value: "paste", label: "Paste Text" },
+] as const;
+
 function KnowledgeStep() {
   const qc = useQueryClient();
   const { data: sources, isLoading, isError, refetch } = useSources();
@@ -257,6 +312,7 @@ function KnowledgeStep() {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [content, setContent] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["kb", "sources"] });
 
@@ -303,28 +359,50 @@ function KnowledgeStep() {
   });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-      <div className="space-y-4 rounded-xl border bg-muted/30 p-4 lg:min-h-[26rem]">
-        <div className="grid gap-2 sm:max-w-xs">
-          <Label htmlFor="kb-kind">Source type</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as KnowledgeKind)}>
-            <SelectTrigger id="kb-kind" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="file">Upload a file</SelectItem>
-              <SelectItem value="url">Import from URL</SelectItem>
-              <SelectItem value="paste">Paste text</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-4 rounded-xl border bg-gradient-to-br from-secondary/40 to-secondary/10 p-4 lg:min-h-[14rem]">
+        <div className="grid gap-2">
+          <Label>Source type</Label>
+          <div className="flex flex-wrap gap-2">
+            {KNOWLEDGE_KINDS.map((k) => (
+              <Button
+                key={k.value}
+                type="button"
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "rounded-full text-xs",
+                  // Mirrors the left panel's active-step treatment: a plain fill + bold text,
+                  // no border accent — not a bordered "selected" chip.
+                  kind === k.value
+                    ? "border-transparent bg-primary/10 font-medium text-primary"
+                    : // A literal neutral grey, not --muted (a pale BLUE tint in this design
+                      // system) — "grayed out" needs an actual grey, not another brand blue.
+                      "border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                )}
+                onClick={() => setKind(k.value)}
+              >
+                {k.label}
+              </Button>
+            ))}
+          </div>
         </div>
 
         {kind === "file" && (
           <div className="grid gap-2">
             <Label htmlFor="kb-file">File</Label>
             <Input
+              readOnly
+              value={file?.name ?? ""}
+              placeholder="Click to choose a file"
+              className="cursor-pointer text-xs md:text-xs"
+              onClick={() => fileInputRef.current?.click()}
+            />
+            <input
+              ref={fileInputRef}
               id="kb-file"
               type="file"
+              className="sr-only"
               accept=".pdf,.txt,.md,.csv,.html,.docx"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
@@ -338,6 +416,7 @@ function KnowledgeStep() {
               id="kb-url"
               type="url"
               placeholder="https://help.example.com/returns"
+              className="text-xs md:text-xs"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
@@ -349,8 +428,8 @@ function KnowledgeStep() {
             <Label htmlFor="kb-content">Content</Label>
             <Textarea
               id="kb-content"
-              rows={5}
               placeholder="Paste an FAQ, policy, or any text the agent should know…"
+              className="field-sizing-fixed h-9 min-h-9 resize-none overflow-hidden text-xs md:text-xs"
               value={content}
               onChange={(e) => setContent(e.target.value)}
             />
@@ -359,30 +438,27 @@ function KnowledgeStep() {
 
         <div className="grid gap-2">
           <Label htmlFor="kb-name">
-            Display name <span className="font-normal text-muted-foreground">(optional)</span>
+            Name <span className="font-normal text-muted-foreground">(optional)</span>
           </Label>
           <Input
             id="kb-name"
-            placeholder="Returns policy"
+            placeholder="e.g. Returns policy"
+            className="text-xs md:text-xs"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </div>
 
-        <Button onClick={() => add.mutate()} disabled={add.isPending}>
-          {kind === "url" ? (
-            <Link2 className="size-4" />
-          ) : kind === "paste" ? (
-            <ClipboardType className="size-4" />
-          ) : (
-            <Upload className="size-4" />
-          )}
-          {add.isPending ? "Adding…" : "Add source"}
-        </Button>
+        <div className="flex justify-end">
+          <Button onClick={() => add.mutate()} disabled={add.isPending}>
+            {add.isPending ? "Adding…" : "Add source"}
+          </Button>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium">Existing sources</h3>
+      <div className="flex flex-col rounded-xl border bg-card lg:min-h-[14rem]">
+        <h3 className="px-4 py-3 text-sm font-medium">Existing sources</h3>
+        <div className="flex-1 p-3">
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-14 w-full rounded-lg" />
@@ -397,7 +473,7 @@ function KnowledgeStep() {
             description="Add your first document, FAQ, or URL above to ground the agent's answers."
           />
         ) : (
-          <ul className="divide-y rounded-xl border bg-card">
+          <ul className="divide-y">
             {sources.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
@@ -417,6 +493,7 @@ function KnowledgeStep() {
             ))}
           </ul>
         )}
+        </div>
       </div>
     </div>
   );
@@ -431,6 +508,7 @@ function RecordsStep({ industry }: { industry: string }) {
   const [recordType, setRecordType] = useState<string>(recordTypes[0] ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<UploadReport | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const upload = useMutation({
     mutationFn: async () => {
@@ -465,109 +543,121 @@ function RecordsStep({ industry }: { industry: string }) {
   });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-      <div className="space-y-4 lg:min-h-[26rem]">
-      <div className="space-y-4 rounded-xl border bg-muted/30 p-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="grid gap-2">
-            <Label htmlFor="rec-type">Record type</Label>
-            <Select value={recordType} onValueChange={setRecordType}>
-              <SelectTrigger id="rec-type" className="w-full">
-                <SelectValue placeholder="Select a record type" />
-              </SelectTrigger>
-              <SelectContent>
-                {recordTypes.map((rt) => (
-                  <SelectItem key={rt} value={rt} className="capitalize">
-                    {rt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-4">
+        <div className="space-y-4 rounded-xl border bg-gradient-to-br from-secondary/40 to-secondary/10 p-4 lg:min-h-[14rem]">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="rec-type">Record type</Label>
+              <Select value={recordType} onValueChange={setRecordType}>
+                <SelectTrigger id="rec-type" className="w-full text-xs">
+                  <SelectValue placeholder="Select a record type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {recordTypes.map((rt) => (
+                    <SelectItem key={rt} value={rt} className="text-xs capitalize">
+                      {rt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="rec-file">CSV file</Label>
+              <Input
+                readOnly
+                value={file?.name ?? ""}
+                placeholder="Click to choose a file"
+                className="cursor-pointer text-xs md:text-xs"
+                onClick={() => fileInputRef.current?.click()}
+              />
+              <input
+                ref={fileInputRef}
+                id="rec-file"
+                type="file"
+                className="sr-only"
+                accept=".csv"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="rec-file">CSV file</Label>
-            <Input
-              id="rec-file"
-              type="file"
-              accept=".csv"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
+          <div className="flex justify-end">
+            <Button onClick={() => upload.mutate()} disabled={upload.isPending}>
+              {upload.isPending ? "Uploading…" : "Upload dataset"}
+            </Button>
           </div>
         </div>
-        <Button onClick={() => upload.mutate()} disabled={upload.isPending}>
-          <Upload className="size-4" />
-          {upload.isPending ? "Uploading…" : "Upload dataset"}
-        </Button>
-      </div>
 
-      {report && (
-        <div
-          className={cn(
-            "space-y-2 rounded-xl border p-4 text-sm",
-            report.ok ? "border-success/30 bg-success/5" : "border-warning/40 bg-warning/10"
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <p className="font-medium capitalize">{report.record_type} upload</p>
-            <StatusBadge value={report.ok ? "ready" : "failed"} />
-          </div>
-          <p className="text-muted-foreground">
-            <span className="tabular-nums">{report.inserted}</span> inserted
-            {report.truncated ? (
-              <>
-                {" · "}
-                <span className="tabular-nums">{report.truncated}</span> replaced prior rows
-              </>
+        {report && (
+          <div
+            className={cn(
+              "space-y-2 rounded-xl border p-4 text-sm",
+              report.ok ? "border-success/30 bg-success/5" : "border-warning/40 bg-warning/10"
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium capitalize">{report.record_type} upload</p>
+              <StatusBadge value={report.ok ? "ready" : "failed"} />
+            </div>
+            <p className="text-muted-foreground">
+              <span className="tabular-nums">{report.inserted}</span> inserted
+              {report.truncated ? (
+                <>
+                  {" · "}
+                  <span className="tabular-nums">{report.truncated}</span> replaced prior rows
+                </>
+              ) : null}
+            </p>
+            {report.missing_headers?.length ? (
+              <p className="text-destructive">Missing headers: {report.missing_headers.join(", ")}</p>
             ) : null}
-          </p>
-          {report.missing_headers?.length ? (
-            <p className="text-destructive">Missing headers: {report.missing_headers.join(", ")}</p>
-          ) : null}
-          {report.duplicate_keys?.length ? (
-            <p className="text-warning-foreground">
-              Duplicate keys: {report.duplicate_keys.slice(0, 5).join(", ")}
-              {report.duplicate_keys.length > 5 ? "…" : ""}
-            </p>
-          ) : null}
-          {report.row_errors?.length ? (
-            <p className="text-destructive">
-              <span className="tabular-nums">{report.row_errors.length}</span> row error(s). First:
-              row {report.row_errors[0].row}, {report.row_errors[0].error}
-            </p>
-          ) : null}
-        </div>
-      )}
+            {report.duplicate_keys?.length ? (
+              <p className="text-warning-foreground">
+                Duplicate keys: {report.duplicate_keys.slice(0, 5).join(", ")}
+                {report.duplicate_keys.length > 5 ? "…" : ""}
+              </p>
+            ) : null}
+            {report.row_errors?.length ? (
+              <p className="text-destructive">
+                <span className="tabular-nums">{report.row_errors.length}</span> row error(s). First:
+                row {report.row_errors[0].row}, {report.row_errors[0].error}
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
 
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium">Uploaded datasets</h3>
-        {isLoading ? (
-          <Skeleton className="h-14 w-full rounded-lg" />
-        ) : isError ? (
-          <ErrorState message="Couldn't load your datasets." onRetry={() => void refetch()} />
-        ) : !datasets?.length ? (
-          <EmptyState
-            icon={Upload}
-            title="No datasets yet"
-            description="Upload a filled-in template above so the agent can look up customer records."
-          />
-        ) : (
-          <ul className="divide-y rounded-xl border bg-card">
-            {datasets.map((d) => (
-              <li key={d.record_type} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium capitalize">{d.record_type}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Updated {new Date(d.updated_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <span className="text-sm text-muted-foreground tabular-nums">
-                  {d.row_count.toLocaleString()} rows
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="flex flex-col rounded-xl border bg-card lg:min-h-[14rem]">
+        <h3 className="px-4 py-3 text-sm font-medium">Uploaded datasets</h3>
+        <div className="flex-1 p-3">
+          {isLoading ? (
+            <Skeleton className="h-14 w-full rounded-lg" />
+          ) : isError ? (
+            <ErrorState message="Couldn't load your datasets." onRetry={() => void refetch()} />
+          ) : !datasets?.length ? (
+            <EmptyState
+              icon={Upload}
+              title="No datasets yet"
+              description="Upload a filled-in template above so the agent can look up customer records."
+            />
+          ) : (
+            <ul className="divide-y">
+              {datasets.map((d) => (
+                <li key={d.record_type} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium capitalize">{d.record_type}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Updated {new Date(d.updated_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {d.row_count.toLocaleString()} rows
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -650,10 +740,11 @@ function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSa
                   <Textarea
                     rows={3}
                     placeholder="A warm, concise support specialist who always cites policy…"
+                    className="text-xs md:text-xs"
                     {...field}
                   />
                 </FormControl>
-                <FormDescription>How the agent should sound and behave.</FormDescription>
+                <FormDescription className="text-xs">How the agent should sound and behave.</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -665,7 +756,7 @@ function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSa
               <FormItem>
                 <FormLabel>Welcome message</FormLabel>
                 <FormControl>
-                  <Input placeholder="Hi! How can I help you today?" {...field} />
+                  <Input placeholder="Hi! How can I help you today?" className="text-xs md:text-xs" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -679,13 +770,13 @@ function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSa
                 <FormLabel>Default language</FormLabel>
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
-                    <SelectTrigger className="w-full sm:max-w-xs">
+                    <SelectTrigger className="w-full text-xs sm:max-w-xs">
                       <SelectValue />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     {LANGUAGES.map((l) => (
-                      <SelectItem key={l.value} value={l.value}>
+                      <SelectItem key={l.value} value={l.value} className="text-xs">
                         {l.label}
                       </SelectItem>
                     ))}
@@ -697,12 +788,17 @@ function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSa
           />
         </div>
 
-        <div className="space-y-3 rounded-xl border p-4">
-          <div>
-            <p className="text-sm font-medium">Escalation triggers</p>
-            <p className="text-xs text-muted-foreground">
-              When any active trigger fires, the conversation hands off to a human.
-            </p>
+        <div className="space-y-3 rounded-xl border border-accent-slate/30 bg-accent-powder/15 p-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-slate/20 text-accent-slate">
+              <Zap className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Escalation triggers</p>
+              <p className="text-xs text-muted-foreground">
+                When any active trigger fires, the conversation hands off to a human.
+              </p>
+            </div>
           </div>
           <div className="grid gap-2.5 sm:grid-cols-2">
             {ESCALATION_TRIGGERS.map((t) => (
@@ -730,9 +826,15 @@ function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSa
               <FormItem>
                 <FormLabel>Sensitive-intent keywords</FormLabel>
                 <FormControl>
-                  <Input placeholder="lawsuit, chargeback, cancel account" {...field} />
+                  <Input
+                    placeholder="lawsuit, chargeback, cancel account"
+                    className="text-xs md:text-xs"
+                    {...field}
+                  />
                 </FormControl>
-                <FormDescription>Comma-separated. A match forces a human hand-off.</FormDescription>
+                <FormDescription className="text-xs">
+                  Comma-separated. A match forces a human hand-off.
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -744,7 +846,11 @@ function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSa
               <FormItem>
                 <FormLabel>After-hours SLA promise</FormLabel>
                 <FormControl>
-                  <Input placeholder="A specialist will reply within one business day." {...field} />
+                  <Input
+                    placeholder="A specialist will reply within one business day."
+                    className="text-xs md:text-xs"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -788,7 +894,10 @@ const domainSchema = z.object({
   domain: z
     .string()
     .min(1, "Enter a domain")
-    .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/i, "Enter a bare host, e.g. shop.example.com"),
+    .regex(
+      /^([a-z0-9.-]+\.[a-z]{2,}|localhost)(:\d+)?$/i,
+      "Enter a bare host, e.g. shop.example.com (localhost is fine for local testing)"
+    ),
 });
 
 function DomainsStep() {
@@ -831,7 +940,7 @@ function DomainsStep() {
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit((v) => add.mutate(v.domain.trim().toLowerCase()))}
-          className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-start lg:min-h-[26rem] lg:flex-col lg:items-stretch"
+          className="flex flex-col gap-3 rounded-xl border bg-gradient-to-br from-secondary/40 to-secondary/10 p-4 sm:flex-row sm:items-start lg:min-h-[26rem] lg:flex-col lg:items-stretch"
         >
           <FormField
             control={form.control}
@@ -931,7 +1040,7 @@ function StaffStep() {
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit((v) => invite.mutate(v))}
-          className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-start"
+          className="grid gap-3 rounded-xl border bg-gradient-to-br from-secondary/40 to-secondary/10 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-start"
         >
           <FormField
             control={form.control}
@@ -971,7 +1080,6 @@ function StaffStep() {
             )}
           />
           <Button type="submit" disabled={invite.isPending}>
-            <UserPlus className="size-4" />
             {invite.isPending ? "Inviting…" : "Invite"}
           </Button>
         </form>
@@ -992,7 +1100,7 @@ function StaffStep() {
                 <p className="truncate text-sm font-medium">{s.email}</p>
                 <p className="text-xs capitalize text-muted-foreground">{s.role}</p>
               </div>
-              <StatusBadge value={staffStatus(s)} />
+              <StatusBadge value={staffStatus(s)} className="w-24 justify-center" />
             </li>
           ))}
         </ul>
@@ -1055,10 +1163,18 @@ function EmbedStep({ onConfirm }: { onConfirm?: () => void }) {
         </p>
       </div>
 
-      <div className="space-y-3 rounded-xl border p-4">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium">Content-Security-Policy</h3>
+      <div className="space-y-3 rounded-xl border border-accent-navy/25 bg-accent-powder/15 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-navy/12 text-accent-navy">
+              <ShieldCheck className="size-4" />
+            </span>
+            <h3 className="text-sm font-medium">Content-Security-Policy</h3>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => copy(CSP_RULES, "CSP rules")}>
+            <Copy className="size-4" />
+            Copy CSP rules
+          </Button>
         </div>
         <p className="text-sm text-muted-foreground">
           If your site enforces a strict CSP, allow the widget with these directives:
@@ -1068,10 +1184,6 @@ function EmbedStep({ onConfirm }: { onConfirm?: () => void }) {
             <code>{CSP_RULES}</code>
           </pre>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => copy(CSP_RULES, "CSP rules")}>
-          <Copy className="size-4" />
-          Copy CSP rules
-        </Button>
       </div>
     </div>
   );
@@ -1087,8 +1199,13 @@ export function OnboardingPage() {
   const setActive = useOnboardingStore((s) => s.setActive);
   const confirmStep = useOnboardingStore((s) => s.confirmStep);
   const resumed = useRef(false);
+  const navigate = useNavigate();
 
   const { tenant, tenantQ, done, settled } = useOnboardingProgress();
+  // Whether this is a first-time run-through vs. an admin revisiting via the "Setup guide" nav
+  // item after already finishing once — the welcome banner below only makes sense for the former.
+  const { data: onboardingStatus } = useOnboardingStatus();
+  const isRevisit = onboardingStatus?.completed === true;
 
   // Resume: once the derived state has loaded for the first time, jump to the first incomplete
   // step so returning users land where they left off.
@@ -1106,16 +1223,26 @@ export function OnboardingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, tenant]);
 
-  // Hands the top bar a static welcome banner for the whole wizard (not per-step — the step
-  // itself is already shown in the card below) so the app bar reads as part of onboarding
-  // instead of a plain breadcrumb. Cleared on unmount to restore the breadcrumb elsewhere.
+  // Hands the top bar a title/subtitle for the whole wizard (not per-step — the step itself is
+  // already shown in the card below) so the app bar reads as part of onboarding. The first-time
+  // copy only makes sense for an actual first run-through — an admin revisiting via "Setup guide"
+  // after already finishing once gets a plainer banner instead ("complete each step to launch"
+  // reads oddly once the agent is already live). Cleared on unmount either way.
   useEffect(() => {
-    usePageBanner.getState().set({
-      title: "Welcome! Let's set up your AI agent.",
-      subtitle: "Complete each step to launch your AI support agent. Your progress is saved automatically.",
-    });
+    usePageBanner.getState().set(
+      isRevisit
+        ? {
+            title: "Setup guide",
+            subtitle: "Review any part of your AI agent's setup.",
+          }
+        : {
+            title: "Welcome! Let's set up your AI agent.",
+            subtitle:
+              "Complete each step to launch your AI support agent. Your progress is saved automatically.",
+          }
+    );
     return () => usePageBanner.getState().clear();
-  }, []);
+  }, [isRevisit]);
 
   if (tenantQ.isLoading) {
     return (
@@ -1146,8 +1273,17 @@ export function OnboardingPage() {
   const currentIndex = STEPS.findIndex((s) => s.key === active);
   const StepIcon = current.icon;
 
+  const isLastStep = currentIndex === STEPS.length - 1;
+
   const goNext = () => {
-    if (currentIndex < STEPS.length - 1) setActive(STEPS[currentIndex + 1].key);
+    if (isLastStep) {
+      toast.success("Your AI agent is set up!", {
+        description: "It's live and ready to help your customers.",
+      });
+      navigate("/overview");
+      return;
+    }
+    setActive(STEPS[currentIndex + 1].key);
   };
 
   const renderStep = () => {
@@ -1155,11 +1291,11 @@ export function OnboardingPage() {
       case "industry":
         return <IndustryStep tenant={tenant} />;
       case "templates":
-        return <TemplatesStep industry={tenant.industry} />;
+        return <TemplatesStep industry={tenant.industry ?? ""} onConfirm={() => confirmStep("templates")} />;
       case "knowledge":
         return <KnowledgeStep />;
       case "records":
-        return <RecordsStep industry={tenant.industry} />;
+        return <RecordsStep industry={tenant.industry ?? ""} />;
       case "config":
         return <ConfigStep onSaved={() => confirmStep("config")} />;
       case "domains":
@@ -1172,36 +1308,45 @@ export function OnboardingPage() {
   };
 
   return (
-    <Card className="shadow-sm">
-      <CardHeader className="border-b bg-secondary/30">
+    // `overflow-hidden gap-0 py-0`: the default Card reserves its own py-6/gap-6 padding around
+    // sections regardless of their background, which left a strip of the card's own white
+    // background above CardHeader — looked like a stray white patch above the step icon no
+    // matter what color the header itself was. Overriding both, and giving each section its own
+    // explicit padding, makes the header's background actually reach the card's rounded top edge.
+    <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+      <CardHeader className="gap-2 border-b bg-gradient-to-br from-secondary/70 to-secondary/25 px-6 py-5">
         <div className="flex items-start gap-3">
           <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
             <StepIcon className="size-5" />
           </div>
           <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2">{current.label}</CardTitle>
-            <CardDescription>{current.description}</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-lg">{current.label}</CardTitle>
+            <CardDescription className="text-xs">{current.description}</CardDescription>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="min-h-[14rem] py-4">{renderStep()}</CardContent>
-      <CardFooter className="justify-end border-t">
-        {/* No "Back" — the step list in the sidebar already jumps to any past/current step.
-            "Next" stays locked until the current step reports done, so setup can't be raced
-            past a step that hasn't actually been completed yet. Icon-only: the arrow alone is
-            enough once it's the sole action in the footer. */}
-        <Button
-          variant="outline"
-          size="icon"
-          className="rounded-full"
-          aria-label="Next step"
-          title="Next step"
-          onClick={goNext}
-          disabled={currentIndex === STEPS.length - 1 || !done[current.key]}
-        >
-          <ArrowRight className="size-4" />
-        </Button>
-      </CardFooter>
+      <CardContent className="min-h-[14rem] px-6 py-5">{renderStep()}</CardContent>
+      {/* Only during the actual first-time run-through — once onboarding is already complete,
+          revisiting via "Setup guide" is a pure review: no "Finish" action to race back through,
+          and nothing here should look like it's still gating progress to the dashboard. */}
+      {!isRevisit && (
+        <CardFooter className="justify-end border-t px-6 py-5">
+          {/* No "Back" — the step list in the sidebar already jumps to any past/current step.
+              Locked until the current step reports done, so setup can't be raced past a step
+              that hasn't actually been completed yet. On the last step this becomes "Finish",
+              confirming the agent is set up and returning to the dashboard. */}
+          <Button
+            size="icon"
+            className="rounded-full bg-gradient-to-br from-primary to-primary/70 shadow-sm transition-shadow hover:shadow-md"
+            aria-label={isLastStep ? "Finish setup" : "Next step"}
+            title={isLastStep ? "Finish setup" : "Next step"}
+            onClick={goNext}
+            disabled={!done[current.key]}
+          >
+            {isLastStep ? <CheckCircle2 className="size-4" /> : <ArrowRight className="size-4" />}
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }

@@ -222,7 +222,12 @@ function TenantsTab() {
       {
         accessorKey: "industry",
         header: "Industry",
-        cell: ({ row }) => <Badge variant="outline">{humanize(row.original.industry)}</Badge>,
+        cell: ({ row }) =>
+          row.original.industry ? (
+            <Badge variant="outline">{humanize(row.original.industry)}</Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">Not set yet</span>
+          ),
       },
       {
         accessorKey: "status",

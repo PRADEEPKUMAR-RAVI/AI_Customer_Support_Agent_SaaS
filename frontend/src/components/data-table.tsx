@@ -23,6 +23,17 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "./empty-state";
 import { ErrorState } from "./error-state";
 
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData, TValue> {
+    /** Aligns both the header label and cell content — for columns whose cells are centered
+     * controls (a segmented toggle, a row of action buttons) rather than left-to-right text. */
+    align?: "left" | "center" | "right";
+  }
+}
+
+const ALIGN_CLASS = { left: "text-left", center: "text-center", right: "text-right" } as const;
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -70,12 +81,20 @@ export function DataTable<TData, TValue>({
               <TableRow key={hg.id} className="hover:bg-transparent">
                 {hg.headers.map((header) => {
                   const canSort = header.column.getCanSort();
+                  const align = header.column.columnDef.meta?.align;
                   return (
-                    <TableHead key={header.id} className="whitespace-nowrap">
+                    <TableHead
+                      key={header.id}
+                      className={cn("whitespace-nowrap", align && ALIGN_CLASS[align])}
+                    >
                       {header.isPlaceholder ? null : canSort ? (
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1.5 hover:text-foreground"
+                          className={cn(
+                            "inline-flex items-center gap-1.5 hover:text-foreground",
+                            align === "center" && "justify-center",
+                            align === "right" && "justify-end"
+                          )}
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -114,11 +133,14 @@ export function DataTable<TData, TValue>({
                   onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                   className={cn(onRowClick && "cursor-pointer")}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const align = cell.column.columnDef.meta?.align;
+                    return (
+                      <TableCell key={cell.id} className={align && ALIGN_CLASS[align]}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))
             )}

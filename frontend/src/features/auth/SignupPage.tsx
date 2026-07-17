@@ -1,10 +1,9 @@
 /** FE-Auth — `/signup`. A single centered split card (not the shared centered `AuthLayout`
  * column): the pitch sits on the left on a softly tinted panel, the form on the right on the
  * card surface — separated by a background shift, not a hairline. Company name + email +
- * password + industry pick in one step for a business signing up to embed an AI support agent:
- * the backend's `SignupRequest` already requires an industry (it provisions the record schema +
- * default agent_settings atomically), so there is no separate "pick an industry" screen for the
- * walking skeleton — this form *is* the Phase-1 "industry pick".
+ * password only — industry is chosen in onboarding step 1 (`IndustryStep` in
+ * `OnboardingPage.tsx`), not here, so a brand-new tenant has no industry until the admin picks
+ * one there (immutable afterward).
  *
  * Follows the app's normal light/dark theme (the `.dark` class on `<html>`) via the standard
  * semantic tokens — no pinned palette. Shares its pitch panel + theme switch with `/login`
@@ -30,30 +29,14 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
-import { signup, type Industry } from "../../lib/auth";
+import { signup } from "../../lib/auth";
 import { AuthSplitShell } from "./AuthBrand";
-
-const INDUSTRIES: { value: Industry; label: string }[] = [
-  { value: "retail", label: "Retail / E-commerce" },
-  { value: "logistics", label: "Logistics / Courier" },
-  { value: "telecom", label: "Telecom / ISP" },
-  { value: "healthcare", label: "Healthcare / Clinic" },
-  { value: "travel", label: "Travel / Hospitality" },
-];
 
 const signupSchema = z.object({
   company_name: z.string().min(1, "Company is required"),
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(8, "Use at least 8 characters"),
-  industry: z.enum(["retail", "logistics", "telecom", "healthcare", "travel"]),
 });
 
 type SignupValues = z.infer<typeof signupSchema>;
@@ -67,7 +50,6 @@ export function SignupPage() {
       company_name: "",
       email: "",
       password: "",
-      industry: "retail",
     },
   });
 
@@ -182,35 +164,6 @@ export function SignupPage() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="industry"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-xs">Industry</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="w-full text-sm">
-                          <SelectValue placeholder="Select your industry" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {INDUSTRIES.map((i) => (
-                          <SelectItem key={i.value} value={i.value}>
-                            {i.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage className="text-xs" />
-                    <FormDescription className="text-[11px]">
-                      Tailors your agent to your industry&apos;s records, terminology, and
-                      workflows.
-                    </FormDescription>
-                  </FormItem>
-                )}
-              />
-
               <Button
                 type="submit"
                 size="lg"

@@ -20,7 +20,6 @@ import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { NoAccessState } from "@/components/no-access-state";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +44,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { usePageBanner } from "@/lib/pageBanner";
 import { hasPermission } from "@/lib/rbac";
 
 import {
@@ -130,7 +130,7 @@ function StringListEditor({
     <div className="space-y-2.5">
       <div className="flex flex-wrap gap-1.5">
         {list.length === 0 ? (
-          <span className="text-sm text-muted-foreground">{emptyLabel}</span>
+          <span className="text-xs text-muted-foreground">{emptyLabel}</span>
         ) : (
           list.map((v) => (
             <Badge key={v} variant="secondary" className="gap-1 py-1 pr-1 pl-2.5 font-normal">
@@ -152,6 +152,7 @@ function StringListEditor({
           id={id}
           value={draft}
           placeholder={placeholder}
+          className="text-xs md:text-xs"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -199,9 +200,9 @@ function NumberField({
           step={step}
           value={Number.isFinite(value) ? value : 0}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="max-w-36 tabular-nums"
+          className="max-w-36 text-xs tabular-nums md:text-xs"
         />
-        {unit ? <span className="text-sm text-muted-foreground">{unit}</span> : null}
+        {unit ? <span className="text-xs text-muted-foreground">{unit}</span> : null}
       </div>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
@@ -280,7 +281,12 @@ function PendingTagsTray() {
         <EmptyState
           icon={Tags}
           title="No tags awaiting approval"
-          description="When the AI proposes a new conversation tag, it lands here for a human to approve before it can be applied."
+          description={
+            <span className="mx-auto block text-center">
+              When the AI proposes a new conversation tag, it lands here for a human to approve
+              before it can be applied.
+            </span>
+          }
         />
       }
     />
@@ -336,6 +342,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               value={form.persona ?? ""}
               onChange={(e) => set("persona", e.target.value)}
               placeholder="A helpful, concise customer-support assistant."
+              className="text-xs md:text-xs"
             />
           </div>
           <div className="grid gap-2">
@@ -345,13 +352,14 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               value={form.welcome_message ?? ""}
               onChange={(e) => set("welcome_message", e.target.value)}
               placeholder="Hi! How can I help you today?"
+              className="text-xs md:text-xs"
             />
           </div>
           <Separator />
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <Label htmlFor="autonomy">Autonomy</Label>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Let the AI answer customers without a human in the loop.
               </p>
             </div>
@@ -393,12 +401,12 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               value={form.default_language || undefined}
               onValueChange={(v) => set("default_language", v)}
             >
-              <SelectTrigger id="default-language" className="w-full sm:max-w-64">
+              <SelectTrigger id="default-language" className="w-full text-xs sm:max-w-64">
                 <SelectValue placeholder="Select a default language" />
               </SelectTrigger>
               <SelectContent>
                 {languages.map((l) => (
-                  <SelectItem key={l} value={l}>
+                  <SelectItem key={l} value={l} className="text-xs">
                     {l}
                   </SelectItem>
                 ))}
@@ -429,17 +437,17 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               if (opt) set("relevance_threshold", opt.value);
             }}
           >
-            <SelectTrigger id="threshold" className="w-full sm:max-w-72">
+            <SelectTrigger id="threshold" className="w-full text-xs sm:max-w-72">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {THRESHOLD_OPTIONS.map((o) => (
-                <SelectItem key={o.key} value={o.key}>
+                <SelectItem key={o.key} value={o.key} className="text-xs">
                   {o.label}
                 </SelectItem>
               ))}
               {thresholdKey === "custom" ? (
-                <SelectItem value="custom">
+                <SelectItem value="custom" className="text-xs">
                   Custom ({String(form.relevance_threshold)})
                 </SelectItem>
               ) : null}
@@ -557,6 +565,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               value={form.sla_followup_text ?? ""}
               onChange={(e) => set("sla_followup_text", e.target.value)}
               placeholder="We'll get back to you within one business day."
+              className="text-xs md:text-xs"
             />
           </div>
           <div className="grid gap-5 sm:grid-cols-3">
@@ -602,6 +611,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               value={form.support_notification_email ?? ""}
               onChange={(e) => set("support_notification_email", e.target.value || null)}
               placeholder="support@company.com"
+              className="text-xs md:text-xs"
             />
           </div>
           <div className="grid gap-2">
@@ -611,6 +621,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
               value={form.carrier_url_template ?? ""}
               onChange={(e) => set("carrier_url_template", e.target.value || null)}
               placeholder="https://carrier/track/{tracking_ref}"
+              className="text-xs md:text-xs"
             />
             <p className="text-xs text-muted-foreground">
               Optional. Use <code className="font-mono">{"{tracking_ref}"}</code> where the tracking
@@ -622,7 +633,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
 
       {/* Save bar */}
       <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-4">
-        <span className="mr-auto text-sm text-muted-foreground" aria-live="polite">
+        <span className="mr-auto text-xs text-muted-foreground" aria-live="polite">
           {dirty ? "You have unsaved changes." : "All changes saved."}
         </span>
         <Button
@@ -669,13 +680,19 @@ export function AgentSettingsPage() {
   const canManageSettings = !role || hasPermission(role, "settings:manage");
   const canApproveTags = !role || hasPermission(role, "tags:approve");
 
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Agent settings",
+      subtitle: canManageSettings
+        ? "Configure how the AI assistant answers, escalates, and tags conversations for your account."
+        : "Configure how the AI assistant answers, escalates, and tags conversations.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, [canManageSettings]);
+
   if (!canManageSettings) {
     return (
       <div>
-        <PageHeader
-          title="Agent settings"
-          description="Configure how the AI assistant answers, escalates, and tags conversations."
-        />
         <NoAccessState description="Managing agent settings requires an admin role. Ask an admin if you need changes." />
       </div>
     );
@@ -684,10 +701,6 @@ export function AgentSettingsPage() {
   return (
     <div className="space-y-10">
       <div>
-        <PageHeader
-          title="Agent settings"
-          description="Configure how the AI assistant answers, escalates, and tags conversations for your account."
-        />
         {settingsQ.isLoading ? (
           <SettingsSkeleton />
         ) : settingsQ.isError ? (
@@ -705,7 +718,7 @@ export function AgentSettingsPage() {
         <section className="space-y-4">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold tracking-tight">Pending tags</h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Approve or reject tags the AI proposed. These actions apply immediately and are
               independent of the settings above.
             </p>

@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.domain.records.schemas import Industry
-
 
 class SignupRequest(BaseModel):
+    """Industry is deliberately NOT collected here — it's chosen in onboarding step 1
+    (`PATCH /api/v1/admin/tenant/industry`), once, immutably. A brand-new tenant has no
+    industry until then."""
+
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)
     company_name: str = Field(min_length=1, max_length=200)
-    industry: Industry
 
 
 class LoginRequest(BaseModel):
