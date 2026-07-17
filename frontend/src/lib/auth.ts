@@ -82,9 +82,17 @@ export interface SignupPayload {
   industry: Industry;
 }
 
+/** Turns an RFC7807 (or FastAPI 422 validation) error body into a message safe to show a user —
+ * never the raw `detail` array of `{type, loc, msg, input}` objects, which leaks field paths and
+ * internal shapes straight from the API. */
 async function _problemDetail(res: Response): Promise<string> {
   const body = await res.json().catch(() => null);
-  return body?.detail ?? body?.title ?? `request failed: ${res.status}`;
+  if (Array.isArray(body?.detail)) {
+    return "Please check the form and try again.";
+  }
+  if (typeof body?.detail === "string" && body.detail) return body.detail;
+  if (typeof body?.title === "string" && body.title) return body.title;
+  return "Something went wrong. Please try again.";
 }
 
 export async function signup(payload: SignupPayload): Promise<{ tenant_id: string; message: string }> {

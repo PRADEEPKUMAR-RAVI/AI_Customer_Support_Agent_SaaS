@@ -72,7 +72,7 @@ export function ResetPage() {
     return (
       <Card>
         <CardHeader className="items-center text-center">
-          <div className="mb-1 grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <div className="mx-auto mb-1 grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
             <AlertCircle className="size-6" />
           </div>
           <CardTitle className="text-xl">Invalid reset link</CardTitle>
@@ -107,8 +107,9 @@ export function ResetPage() {
                   <FormControl>
                     <Input
                       type="password"
-                      placeholder="At least 8 characters"
+                      placeholder="••••••••"
                       autoComplete="new-password"
+                      className="placeholder:text-base placeholder:font-bold placeholder:tracking-[0.2em] placeholder:text-foreground/40"
                       {...field}
                     />
                   </FormControl>
@@ -125,8 +126,9 @@ export function ResetPage() {
                   <FormControl>
                     <Input
                       type="password"
-                      placeholder="Re-enter your new password"
+                      placeholder="••••••••"
                       autoComplete="new-password"
+                      className="placeholder:text-base placeholder:font-bold placeholder:tracking-[0.2em] placeholder:text-foreground/40"
                       {...field}
                     />
                   </FormControl>

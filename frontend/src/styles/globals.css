@@ -1,8 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Geist is self-hosted (no CDN — CSP `font-src 'self'` safe); the @font-face CSS is imported
-   as a JS side-effect in src/main.tsx so Vite resolves it from node_modules reliably. */
+/* Inter (body), Poppins (headings), and IBM Plex Mono (data/code) are all self-hosted (no CDN —
+   CSP `font-src 'self'` safe); the @font-face CSS is imported as a JS side-effect in
+   src/main.tsx so Vite resolves it from node_modules reliably. */
 
 /* Dark mode driven by a `.dark` class on <html> (set by useTheme, before paint). */
 @custom-variant dark (&:is(.dark *));
@@ -74,7 +75,7 @@
      its own border color instead of introducing an unrelated one. */
   --ring: color-mix(in oklab, var(--brand-500) 55%, white 45%);
 
-  --sidebar: oklch(1 0 0); /* white — a raised rail against the gray canvas */
+  --sidebar: color-mix(in oklab, var(--brand-200) 45%, white); /* steel-tinted rail, distinct from the white cards */
   --sidebar-foreground: var(--brand-900);
   --sidebar-primary: var(--brand-900);
   --sidebar-primary-foreground: var(--brand-200);
@@ -208,8 +209,10 @@
   --color-chart-7: var(--chart-7);
   --color-chart-8: var(--chart-8);
 
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", "JetBrains Mono", monospace;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Headings/titles only (h1-h3, CardTitle) — see the base-layer rule and card.tsx below. */
+  --font-display: "Poppins", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "JetBrains Mono", monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -235,6 +238,13 @@
   /* Tabular figures where digits must align (tables, KPIs, IDs, cost, timestamps). */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+  /* Poppins on every real heading tag; `CardTitle` (a div, not h1-h6 — see card.tsx) gets the
+     same treatment via the `font-display` utility class this --font-display also registers. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
   }
 }
 

@@ -47,7 +47,7 @@ export function VerifyPage() {
     return (
       <Card>
         <CardHeader className="items-center text-center">
-          <div className="mb-1 grid size-11 place-items-center rounded-full bg-muted text-muted-foreground">
+          <div className="mx-auto mb-1 grid size-11 place-items-center rounded-full bg-muted text-muted-foreground">
             <Loader2 className="size-6 animate-spin" aria-label="Verifying" />
           </div>
           <CardTitle className="text-xl">Verifying your email</CardTitle>
@@ -61,7 +61,7 @@ export function VerifyPage() {
     return (
       <Card>
         <CardHeader className="items-center text-center">
-          <div className="mb-1 grid size-11 place-items-center rounded-full bg-success/10 text-success">
+          <div className="mx-auto mb-1 grid size-11 place-items-center rounded-full bg-success/10 text-success">
             <CheckCircle2 className="size-6" />
           </div>
           <CardTitle className="text-xl">Email verified</CardTitle>
@@ -79,7 +79,7 @@ export function VerifyPage() {
   return (
     <Card>
       <CardHeader className="items-center text-center">
-        <div className="mb-1 grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
+        <div className="mx-auto mb-1 grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
           <AlertCircle className="size-6" />
         </div>
         <CardTitle className="text-xl">Verification failed</CardTitle>

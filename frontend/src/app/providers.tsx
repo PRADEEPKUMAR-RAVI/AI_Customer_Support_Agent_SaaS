@@ -79,7 +79,9 @@ export function Providers({ children }: PropsWithChildren) {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={200}>
         <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-        <Toaster position="top-right" richColors />
+        {/* No `richColors` — that would apply sonner's own hardcoded palette instead of the
+            success/destructive/warning/info tokens `<Toaster>` themes itself from. */}
+        <Toaster position="top-right" />
       </TooltipProvider>
     </QueryClientProvider>
   );

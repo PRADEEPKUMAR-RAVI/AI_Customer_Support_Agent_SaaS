@@ -36,53 +36,138 @@ from app.workers._run import run_async
 log = logging.getLogger(__name__)
 
 
-def _render(event_type: str, payload: dict) -> tuple[str, str, str] | None:
-    """(recipient, subject, body) for an outbox EMAIL event, or None to no-op (non-email events
-    like ``ticket.*_summary.requested`` fall through and are marked done without sending). Event
-    names match the emit() call sites across M1 (auth), M6 (escalation_service), and admin invite.
+def _email_html(*, heading: str, paragraphs: list[str], cta_label: str, cta_url: str) -> str:
+    """Branded HTML shell shared by every transactional email — logo mark, a primary button,
+    and a copy-paste fallback link underneath it (the pattern most products use, since some
+    clients/spam filters strip or disable the button). Inline styles + table layout only:
+    email clients don't load external stylesheets. Colors mirror the app's own light-mode
+    tokens (`src/styles/globals.css`) so the two surfaces read as one product."""
+    body_html = "".join(
+        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#3a3530;">{p}</p>'
+        for p in paragraphs
+    )
+    return f"""<!doctype html>
+<html>
+  <body style="margin:0;padding:32px 16px;background:#e8e7e2;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;border:1px solid #e2ded6;">
+            <tr>
+              <td style="padding:28px 32px 0;">
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="width:32px;height:32px;border-radius:8px;background:#1c1917;text-align:center;">
+                      <span style="display:inline-block;line-height:32px;color:#e8e7e2;font-size:15px;font-weight:700;">R</span>
+                    </td>
+                    <td style="padding-left:10px;font-size:15px;font-weight:600;color:#1c1917;">Relay</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px 8px;">
+                <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#1c1917;">{heading}</h1>
+                {body_html}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 32px 32px;">
+                <a href="{cta_url}" style="display:inline-block;background:#1c1917;color:#e8e7e2;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px;">{cta_label}</a>
+                <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:#6b6560;">
+                  Or copy and paste this link into your browser:<br>
+                  <span style="word-break:break-all;color:#9c5326;">{cta_url}</span>
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:20px 0 0;font-size:11px;color:#9a948d;">Relay &middot; AI customer support, wired to your own data.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
 
-    Bodies are plain text with a CLICKABLE action link built from ``FRONTEND_ORIGIN`` + the token
-    (email clients auto-linkify the URL) — the raw token is not shown. NOTE: the link is only
-    reachable by the recipient if FRONTEND_ORIGIN is a URL THEY can open — fine for local testing on
-    your own machine (http://localhost:5173), but set it to your deployed domain before inviting
-    real staff on other machines, or their link will point at their own localhost."""
+
+def _compose(*, heading: str, paragraphs: list[str], cta_label: str, cta_url: str) -> tuple[str, str]:
+    """Returns (plain_text, html) built from the same copy, so the two parts never drift."""
+    text = heading + "\n\n" + "\n\n".join(paragraphs) + f"\n\n{cta_label}: {cta_url}"
+    html = _email_html(heading=heading, paragraphs=paragraphs, cta_label=cta_label, cta_url=cta_url)
+    return text, html
+
+
+def _render(event_type: str, payload: dict) -> tuple[str, str, str, str] | None:
+    """(recipient, subject, text_body, html_body) for an outbox EMAIL event, or None to no-op
+    (non-email events like ``ticket.*_summary.requested`` fall through and are marked done
+    without sending). Event names match the emit() call sites across M1 (auth), M6
+    (escalation_service), and admin invite.
+
+    NOTE: the link is only reachable by the recipient if FRONTEND_ORIGIN is a URL THEY can
+    open — fine for local testing on your own machine (http://localhost:5173), but set it to
+    your deployed domain before inviting real staff on other machines, or their link will
+    point at their own localhost."""
     origin = get_settings().frontend_origin.rstrip("/")
     token = payload.get("token", "")
     if event_type == "email.verify":
         link = f"{origin}/verify?token={token}"
-        return (payload["to"], "Verify your account",
-                "Welcome! Please confirm your email address to activate your account:\n\n"
-                f"{link}\n\nIf you didn't create this account, you can safely ignore this email.")
+        text, html = _compose(
+            heading="Confirm your email",
+            paragraphs=["Welcome to Relay! Please confirm your email address to activate your account.",
+                        "If you didn't create this account, you can safely ignore this email."],
+            cta_label="Verify your account",
+            cta_url=link,
+        )
+        return (payload["to"], "Verify your account", text, html)
     if event_type == "email.password_reset":
         link = f"{origin}/reset?token={token}"
-        return (payload["to"], "Reset your password",
-                "We received a request to reset your password. Choose a new one here "
-                "(this link expires in 1 hour):\n\n"
-                f"{link}\n\nIf you didn't request this, you can safely ignore this email.")
+        text, html = _compose(
+            heading="Reset your password",
+            paragraphs=["We received a request to reset your password. This link expires in 1 hour.",
+                        "If you didn't request this, you can safely ignore this email."],
+            cta_label="Choose a new password",
+            cta_url=link,
+        )
+        return (payload["to"], "Reset your password", text, html)
     if event_type == "email.staff_invite":
         link = f"{origin}/reset?token={token}"
-        return (payload["to"], "You've been invited to a workspace",
-                "You've been invited to a workspace on the AI Customer Support Agent.\n\n"
-                "Accept the invitation and set your password here (link expires in 7 days):\n\n"
-                f"{link}")
+        text, html = _compose(
+            heading="You've been invited to a workspace",
+            paragraphs=["You've been invited to join a team on Relay. This invite link expires in 7 days."],
+            cta_label="Accept invite & set password",
+            cta_url=link,
+        )
+        return (payload["to"], "You've been invited to a workspace", text, html)
     if event_type == "email.escalation_agent_notify":
         # Sent to EACH available agent so any of them can claim the escalated ticket.
         pr = payload.get("priority")
         pr_note = " (high priority)" if pr == "high" else ""
-        return (payload["to"], f"New escalation to claim{pr_note}",
-                f"A conversation was escalated{pr_note} (reason: {payload.get('reason')}) and is "
-                f"waiting in the queue. Claim it in your agent workspace to help the customer:\n\n"
-                f"{origin}/inbox")
+        text, html = _compose(
+            heading=f"New escalation to claim{pr_note}",
+            paragraphs=[f"A conversation was escalated{pr_note} (reason: {payload.get('reason')}) "
+                        "and is waiting in the queue."],
+            cta_label="Open agent workspace",
+            cta_url=f"{origin}/inbox",
+        )
+        return (payload["to"], f"New escalation to claim{pr_note}", text, html)
     if event_type in ("email.escalation_support_notify", "escalation.support_notify"):
-        return (payload["to"], "A customer is waiting for a human agent",
-                f"Ticket {payload.get('ticket_id')} was escalated (reason: {payload.get('reason')}).\n\n"
-                f"Please claim it in the agent workspace:\n\n{origin}/inbox")
+        text, html = _compose(
+            heading="A customer is waiting for a human agent",
+            paragraphs=[f"Ticket {payload.get('ticket_id')} was escalated "
+                        f"(reason: {payload.get('reason')})."],
+            cta_label="Open agent workspace",
+            cta_url=f"{origin}/inbox",
+        )
+        return (payload["to"], "A customer is waiting for a human agent", text, html)
     if event_type == "email.customer_reply":
         # After-hours follow-up: the customer left an email, an agent has now replied — deliver it.
-        return (payload["to"], "You have a new reply from our support team",
-                "Our support team has replied to your request:\n\n"
-                f"{payload.get('reply', '')}\n\n"
-                "You can reply by returning to the chat on our website.")
+        text, html = _compose(
+            heading="You have a new reply from our support team",
+            paragraphs=[payload.get("reply", ""),
+                        "You can reply by returning to the chat on our website."],
+            cta_label="View the conversation",
+            cta_url=origin,
+        )
+        return (payload["to"], "You have a new reply from our support team", text, html)
     return None
 
 
@@ -122,7 +207,7 @@ async def _deliver(tid, row: dict) -> str:
         if rendered is None:
             await s.execute(update(Outbox).where(Outbox.id == row["id"]).values(status="sent"))
             return "skipped"
-        to, subject, body = rendered
+        to, subject, body, html = rendered
         dk = row["dedupe_key"]
         # Dedupe: the insert IS the send lock. If it conflicts, someone already handled it.
         inserted = (
@@ -137,7 +222,7 @@ async def _deliver(tid, row: dict) -> str:
             await s.execute(update(Outbox).where(Outbox.id == row["id"]).values(status="sent"))
             return "deduped"
         try:
-            await asyncio.to_thread(smtp.send, to=to, subject=subject, body=body)
+            await asyncio.to_thread(smtp.send, to=to, subject=subject, body=body, html=html)
             await s.execute(update(Outbox).where(Outbox.id == row["id"]).values(status="sent"))
             return "sent"
         except Exception as exc:  # noqa: BLE001

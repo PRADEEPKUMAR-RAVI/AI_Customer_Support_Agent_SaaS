@@ -14,9 +14,13 @@ from email.message import EmailMessage
 from app.core.config import get_settings
 
 
-def send(*, to: str, subject: str, body: str) -> None:
+def send(*, to: str, subject: str, body: str, html: str | None = None) -> None:
     """Synchronous send (called from a Celery worker). Raises on SMTP failure so the M9
     outbox drain can retry / dead-letter.
+
+    ``body`` is the plain-text part (always sent, and the only part some clients/spam
+    filters render); ``html`` is an optional branded alternative — when given, the message
+    becomes ``multipart/alternative`` and modern clients render the HTML part instead.
 
     Dev (MailPit): ``smtp_user`` empty + ``smtp_starttls`` False → plaintext, no auth.
     Provider relay (Brevo/Resend): set ``smtp_starttls=True`` + ``smtp_user``/``smtp_password``
@@ -29,6 +33,8 @@ def send(*, to: str, subject: str, body: str) -> None:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as client:
         if settings.smtp_starttls:
             client.starttls()

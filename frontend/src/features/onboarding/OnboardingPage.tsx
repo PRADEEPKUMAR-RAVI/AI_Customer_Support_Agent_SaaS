@@ -13,18 +13,15 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import {
-  ArrowLeft,
   ArrowRight,
   Building2,
-  Check,
   ClipboardType,
-  Code2,
   Copy,
   Download,
   FileText,
@@ -60,7 +57,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -77,93 +73,26 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { api, unwrap } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
+import { usePageBanner } from "@/lib/pageBanner";
 import { cn } from "@/lib/utils";
 import type { components } from "@/api/generated/schema";
+import {
+  type Tenant,
+  useDatasets,
+  useDomains,
+  useEmbed,
+  useSettings,
+  useSources,
+  useStaff,
+} from "./queries";
 import { RECORD_TYPES_BY_INDUSTRY } from "./recordTypes";
+import { STEPS } from "./steps";
+import { useOnboardingStore } from "./store";
+import { useOnboardingProgress } from "./useOnboardingProgress";
 
-type Tenant = components["schemas"]["TenantResponse"];
-type AgentSettings = components["schemas"]["AgentSettingsResponse"];
 type SourceOut = components["schemas"]["SourceOut"];
-type DatasetOut = components["schemas"]["DatasetOut"];
 type UploadReport = components["schemas"]["DatasetUploadReport"];
-type AllowedDomain = components["schemas"]["AllowedDomainResponse"];
 type Staff = components["schemas"]["StaffResponse"];
-type EmbedSnippet = components["schemas"]["EmbedSnippetResponse"];
-
-type StepKey =
-  | "industry"
-  | "templates"
-  | "knowledge"
-  | "records"
-  | "config"
-  | "domains"
-  | "staff"
-  | "embed";
-
-const STEPS: {
-  key: StepKey;
-  label: string;
-  hint: string;
-  description: string;
-  icon: typeof Building2;
-}[] = [
-  {
-    key: "industry",
-    label: "Industry",
-    hint: "Your vertical",
-    description: "Confirm the industry your account was created for. It decides which record types your agent understands.",
-    icon: Building2,
-  },
-  {
-    key: "templates",
-    label: "Record templates",
-    hint: "Download CSVs",
-    description: "Download a CSV template for each record type, fill it with your own customer data, then upload it in the Customer records step.",
-    icon: FileText,
-  },
-  {
-    key: "knowledge",
-    label: "Knowledge base",
-    hint: "Docs, FAQs & URLs",
-    description: "Add the documents, FAQs, and pages the agent should ground its answers in. Sources are chunked and indexed after upload.",
-    icon: MessageSquare,
-  },
-  {
-    key: "records",
-    label: "Customer records",
-    hint: "Upload datasets",
-    description: "Upload the filled-in templates so the agent can look up and verify orders, shipments, appointments and more.",
-    icon: Upload,
-  },
-  {
-    key: "config",
-    label: "Agent configuration",
-    hint: "Persona & escalation",
-    description: "Set your agent's voice, greeting, language, and the triggers that hand a conversation to a human.",
-    icon: MessageSquare,
-  },
-  {
-    key: "domains",
-    label: "Allowed domains",
-    hint: "Where it runs",
-    description: "Whitelist the sites permitted to embed your chat widget. Requests from other origins are refused.",
-    icon: Globe,
-  },
-  {
-    key: "staff",
-    label: "Invite your team",
-    hint: "Agents & admins",
-    description: "Invite teammates who will handle escalated conversations or manage the account.",
-    icon: Users,
-  },
-  {
-    key: "embed",
-    label: "Embed the widget",
-    hint: "Go live",
-    description: "Drop the snippet onto your site and you're live. Copy it, add the CSP rules if you enforce one, and ship.",
-    icon: Code2,
-  },
-];
 
 // Mirrors `app/domain/escalation/reasons.py::EscalationReason` for display only — the backend
 // is the source of truth and validates independently of what this checklist shows.
@@ -198,64 +127,6 @@ const STAFF_ROLES = [
   { value: "agent", label: "Agent" },
   { value: "admin", label: "Admin" },
 ];
-
-// ── shared query hooks (keys aligned to sibling pages so caches stay in sync) ────────────────
-
-function useTenant() {
-  return useQuery({
-    queryKey: ["tenant"],
-    queryFn: async () => unwrap<Tenant>(await api.GET("/api/v1/admin/tenant")),
-  });
-}
-
-function useSettings() {
-  return useQuery({
-    queryKey: ["settings"],
-    queryFn: async () => unwrap<AgentSettings>(await api.GET("/api/v1/admin/settings")),
-  });
-}
-
-function useSources() {
-  return useQuery({
-    queryKey: ["kb", "sources"],
-    queryFn: async () => {
-      const page = unwrap(
-        await api.GET("/api/v1/knowledge/sources", {
-          params: { query: { limit: 50, offset: 0 } },
-        })
-      );
-      return page.items;
-    },
-  });
-}
-
-function useDatasets() {
-  return useQuery({
-    queryKey: ["records", "datasets"],
-    queryFn: async () => unwrap<DatasetOut[]>(await api.GET("/api/v1/records/datasets")),
-  });
-}
-
-function useDomains() {
-  return useQuery({
-    queryKey: ["admin", "allowed-domains"],
-    queryFn: async () => unwrap<AllowedDomain[]>(await api.GET("/api/v1/admin/allowed-domains")),
-  });
-}
-
-function useStaff() {
-  return useQuery({
-    queryKey: ["admin", "staff"],
-    queryFn: async () => unwrap<Staff[]>(await api.GET("/api/v1/admin/staff")),
-  });
-}
-
-function useEmbed() {
-  return useQuery({
-    queryKey: ["embed-snippet"],
-    queryFn: async () => unwrap<EmbedSnippet>(await api.GET("/api/v1/admin/embed-snippet")),
-  });
-}
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────
 
@@ -309,10 +180,10 @@ function IndustryStep({ tenant }: { tenant: Tenant }) {
         <StatusBadge value="ready" />
       </div>
       <p className="text-sm text-muted-foreground">
-        Your industry was locked in when your account was created and can't be changed here. It
-        provisions the record schema and default agent behaviour. This vertical supports these
-        record types:
+        Your industry determines the record types your AI agent can work with. Once selected, it
+        can&apos;t be changed.
       </p>
+      <p className="text-xs font-medium text-muted-foreground">Supported record types</p>
       <div className="flex flex-wrap gap-2">
         {recordTypes.length ? (
           recordTypes.map((rt) => (
@@ -339,8 +210,8 @@ function TemplatesStep({ industry }: { industry: string }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Download a template per record type, fill each with your own customer data, and upload the
-        files in the <span className="font-medium text-foreground">Customer records</span> step.
+        Download a template for each record type, fill it with your customer data, then upload it
+        in the <span className="font-semibold text-foreground">Customer Records</span> step.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {recordTypes.map((rt) => (
@@ -354,12 +225,18 @@ function TemplatesStep({ industry }: { industry: string }) {
               </div>
               <div>
                 <p className="text-sm font-medium capitalize">{rt}</p>
-                <p className="text-xs text-muted-foreground">CSV template</p>
+                <p className="text-[10px] text-muted-foreground">CSV</p>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => void downloadTemplate(rt)}>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="rounded-full"
+              aria-label={`Download ${rt} template`}
+              title={`Download ${rt} template`}
+              onClick={() => void downloadTemplate(rt)}
+            >
               <Download className="size-4" />
-              Download
             </Button>
           </div>
         ))}
@@ -426,8 +303,8 @@ function KnowledgeStep() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-4 rounded-xl border bg-muted/30 p-4">
+    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+      <div className="space-y-4 rounded-xl border bg-muted/30 p-4 lg:min-h-[26rem]">
         <div className="grid gap-2 sm:max-w-xs">
           <Label htmlFor="kb-kind">Source type</Label>
           <Select value={kind} onValueChange={(v) => setKind(v as KnowledgeKind)}>
@@ -588,7 +465,8 @@ function RecordsStep({ industry }: { industry: string }) {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+      <div className="space-y-4 lg:min-h-[26rem]">
       <div className="space-y-4 rounded-xl border bg-muted/30 p-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
@@ -659,6 +537,7 @@ function RecordsStep({ industry }: { industry: string }) {
           ) : null}
         </div>
       )}
+      </div>
 
       <div className="space-y-3">
         <h3 className="text-sm font-medium">Uploaded datasets</h3>
@@ -707,7 +586,7 @@ const configSchema = z.object({
 
 type ConfigValues = z.infer<typeof configSchema>;
 
-function ConfigForm({ config }: { config: Record<string, unknown> }) {
+function ConfigForm({ config, onSaved }: { config: Record<string, unknown>; onSaved?: () => void }) {
   const qc = useQueryClient();
 
   const form = useForm<ConfigValues>({
@@ -746,6 +625,7 @@ function ConfigForm({ config }: { config: Record<string, unknown> }) {
     onSuccess: () => {
       toast.success("Configuration saved");
       void qc.invalidateQueries({ queryKey: ["settings"] });
+      onSaved?.();
     },
     onError: (err) => toast.error("Couldn't save", { description: errMessage(err, "Try again.") }),
   });
@@ -885,7 +765,7 @@ function ConfigForm({ config }: { config: Record<string, unknown> }) {
   );
 }
 
-function ConfigStep() {
+function ConfigStep({ onSaved }: { onSaved?: () => void }) {
   const { data, isLoading, isError, refetch } = useSettings();
   if (isLoading) {
     return (
@@ -899,7 +779,7 @@ function ConfigStep() {
   if (isError || !data) {
     return <ErrorState message="Couldn't load your agent settings." onRetry={() => void refetch()} />;
   }
-  return <ConfigForm config={data.config} />;
+  return <ConfigForm config={data.config} onSaved={onSaved} />;
 }
 
 // ── step 6: allowed domains ──────────────────────────────────────────────────────────────────
@@ -947,11 +827,11 @@ function DomainsStep() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit((v) => add.mutate(v.domain.trim().toLowerCase()))}
-          className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-start"
+          className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-start lg:min-h-[26rem] lg:flex-col lg:items-stretch"
         >
           <FormField
             control={form.control}
@@ -973,6 +853,7 @@ function DomainsStep() {
         </form>
       </Form>
 
+      <div className="space-y-3">
       {isLoading ? (
         <Skeleton className="h-14 w-full rounded-lg" />
       ) : isError ? (
@@ -1007,6 +888,7 @@ function DomainsStep() {
           ))}
         </ul>
       )}
+      </div>
     </div>
   );
 }
@@ -1045,7 +927,7 @@ function StaffStep() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit((v) => invite.mutate(v))}
@@ -1095,6 +977,7 @@ function StaffStep() {
         </form>
       </Form>
 
+      <div className="space-y-3">
       {isLoading ? (
         <Skeleton className="h-14 w-full rounded-lg" />
       ) : isError ? (
@@ -1114,6 +997,7 @@ function StaffStep() {
           ))}
         </ul>
       )}
+      </div>
     </div>
   );
 }
@@ -1124,13 +1008,16 @@ const CSP_RULES = `script-src <widget-origin>;
 connect-src <api-origin>;
 img-src data:;`;
 
-function EmbedStep() {
+function EmbedStep({ onConfirm }: { onConfirm?: () => void }) {
   const { data: snippet, isLoading, isError, refetch } = useEmbed();
 
-  const copy = (text: string, label: string) => {
+  const copy = (text: string, label: string, confirms?: boolean) => {
     void navigator.clipboard
       .writeText(text)
-      .then(() => toast.success(`${label} copied`))
+      .then(() => {
+        toast.success(`${label} copied`);
+        if (confirms) onConfirm?.();
+      })
       .catch(() => toast.error("Couldn't copy to clipboard"));
   };
 
@@ -1153,7 +1040,7 @@ function EmbedStep() {
           <p className="text-sm text-muted-foreground">
             Paste this just before the closing <code className="rounded bg-muted px-1 py-0.5 text-xs">&lt;/body&gt;</code> tag.
           </p>
-          <Button variant="outline" size="sm" onClick={() => copy(snippet.snippet, "Snippet")}>
+          <Button variant="outline" size="sm" onClick={() => copy(snippet.snippet, "Snippet", true)}>
             <Copy className="size-4" />
             Copy
           </Button>
@@ -1190,124 +1077,52 @@ function EmbedStep() {
   );
 }
 
-// ── step rail ────────────────────────────────────────────────────────────────────────────────
-
-function StepRail({
-  active,
-  done,
-  completed,
-  onSelect,
-}: {
-  active: StepKey;
-  done: Record<StepKey, boolean>;
-  completed: number;
-  onSelect: (key: StepKey) => void;
-}) {
-  const pct = Math.round((completed / STEPS.length) * 100);
-  return (
-    <Card className="gap-0 py-4 md:sticky md:top-6">
-      <div className="space-y-2 px-4 pb-4">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium">Setup progress</span>
-          <span className="text-muted-foreground tabular-nums">
-            {completed} / {STEPS.length}
-          </span>
-        </div>
-        <Progress value={pct} aria-label={`Setup ${pct}% complete`} />
-      </div>
-      <nav className="flex flex-col gap-0.5 px-2" aria-label="Onboarding steps">
-        {STEPS.map((s, i) => {
-          const isActive = s.key === active;
-          const isDone = done[s.key];
-          return (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => onSelect(s.key)}
-              aria-current={isActive ? "step" : undefined}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
-                isActive ? "bg-accent text-accent-foreground" : "hover:bg-muted/60"
-              )}
-            >
-              <span
-                className={cn(
-                  "grid size-7 shrink-0 place-items-center rounded-full border text-xs font-semibold tabular-nums",
-                  isDone
-                    ? "border-transparent bg-success/15 text-success"
-                    : isActive
-                      ? "border-primary text-primary"
-                      : "border-border text-muted-foreground"
-                )}
-              >
-                {isDone ? <Check className="size-3.5" /> : i + 1}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{s.label}</span>
-                <span className="block truncate text-xs text-muted-foreground">{s.hint}</span>
-              </span>
-            </button>
-          );
-        })}
-      </nav>
-    </Card>
-  );
-}
-
 // ── page ─────────────────────────────────────────────────────────────────────────────────────
 
 export function OnboardingPage() {
-  const [active, setActive] = useState<StepKey>("industry");
+  // Navigation state (active step, config/embed confirmation) lives in a shared store, not local
+  // state — `app-sidebar.tsx` needs to read and drive the exact same state, since it now renders
+  // this step list itself (replacing the normal console nav) while setup is incomplete.
+  const active = useOnboardingStore((s) => s.active);
+  const setActive = useOnboardingStore((s) => s.setActive);
+  const confirmStep = useOnboardingStore((s) => s.confirmStep);
   const resumed = useRef(false);
 
-  const tenantQ = useTenant();
-  const settingsQ = useSettings();
-  const sourcesQ = useSources();
-  const datasetsQ = useDatasets();
-  const domainsQ = useDomains();
-  const staffQ = useStaff();
-  const embedQ = useEmbed();
-
-  const tenant = tenantQ.data;
-  const cfg = settingsQ.data?.config ?? {};
-
-  const done: Record<StepKey, boolean> = {
-    industry: !!tenant?.industry,
-    templates: (datasetsQ.data?.length ?? 0) > 0,
-    knowledge: (sourcesQ.data?.length ?? 0) > 0,
-    records: (datasetsQ.data?.length ?? 0) > 0,
-    config: !!(asStr(cfg.welcome_message) || asStr(cfg.persona)),
-    domains: (domainsQ.data?.length ?? 0) > 0,
-    staff: (staffQ.data?.length ?? 0) > 1,
-    embed: !!embedQ.data?.snippet,
-  };
-  const completed = STEPS.filter((s) => done[s.key]).length;
+  const { tenant, tenantQ, done, settled } = useOnboardingProgress();
 
   // Resume: once the derived state has loaded for the first time, jump to the first incomplete
   // step so returning users land where they left off.
-  const settled =
-    !tenantQ.isLoading &&
-    !settingsQ.isLoading &&
-    !sourcesQ.isLoading &&
-    !datasetsQ.isLoading &&
-    !domainsQ.isLoading &&
-    !staffQ.isLoading &&
-    !embedQ.isLoading;
-
   useEffect(() => {
     if (resumed.current || !settled || !tenant) return;
     resumed.current = true;
-    const first = STEPS.find((s) => !done[s.key]);
+    // `done.industry` is derived from the tenant having an industry — true for every account
+    // from the moment it's created, so it's never a real signal of progress. Without this guard,
+    // "first incomplete step" always skips straight past it to "templates", and a first-time
+    // visitor never sees step 1 at all. Land on industry until the account has SOME real
+    // progress elsewhere; once it does, resume normally.
+    const hasRealProgress = STEPS.slice(1).some((s) => done[s.key]);
+    const first = hasRealProgress ? STEPS.find((s) => !done[s.key]) : STEPS[0];
     setActive(first ? first.key : "embed");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, tenant]);
+
+  // Hands the top bar a static welcome banner for the whole wizard (not per-step — the step
+  // itself is already shown in the card below) so the app bar reads as part of onboarding
+  // instead of a plain breadcrumb. Cleared on unmount to restore the breadcrumb elsewhere.
+  useEffect(() => {
+    usePageBanner.getState().set({
+      title: "Welcome! Let's set up your AI agent.",
+      subtitle: "Complete each step to launch your AI support agent. Your progress is saved automatically.",
+    });
+    return () => usePageBanner.getState().clear();
+  }, []);
 
   if (tenantQ.isLoading) {
     return (
       <div>
         <PageHeader title="Set up your account" description="Getting your setup ready…" />
-        <div className="grid gap-6 md:grid-cols-[280px_minmax(0,1fr)]">
-          <Skeleton className="h-80 w-full rounded-xl" />
+        <div className="space-y-6">
+          <Skeleton className="h-24 w-full rounded-xl" />
           <Skeleton className="h-96 w-full rounded-xl" />
         </div>
       </div>
@@ -1331,9 +1146,6 @@ export function OnboardingPage() {
   const currentIndex = STEPS.findIndex((s) => s.key === active);
   const StepIcon = current.icon;
 
-  const goPrev = () => {
-    if (currentIndex > 0) setActive(STEPS[currentIndex - 1].key);
-  };
   const goNext = () => {
     if (currentIndex < STEPS.length - 1) setActive(STEPS[currentIndex + 1].key);
   };
@@ -1349,66 +1161,47 @@ export function OnboardingPage() {
       case "records":
         return <RecordsStep industry={tenant.industry} />;
       case "config":
-        return <ConfigStep />;
+        return <ConfigStep onSaved={() => confirmStep("config")} />;
       case "domains":
         return <DomainsStep />;
       case "staff":
         return <StaffStep />;
       case "embed":
-        return <EmbedStep />;
+        return <EmbedStep onConfirm={() => confirmStep("embed")} />;
     }
   };
 
   return (
-    <div>
-      <PageHeader
-        title={`Set up ${tenant.name}`}
-        description="Walk through each step to get your AI support agent live. Your progress is saved automatically."
-        actions={
-          <span className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium">
-            <span className="text-muted-foreground">Step</span>
-            <span className="tabular-nums">
-              {currentIndex + 1} of {STEPS.length}
-            </span>
-          </span>
-        }
-      />
-
-      <div className="grid gap-6 md:grid-cols-[280px_minmax(0,1fr)] md:items-start">
-        <StepRail active={active} done={done} completed={completed} onSelect={setActive} />
-
-        <Card>
-          <CardHeader className="border-b">
-            <div className="flex items-start gap-3">
-              <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                <StepIcon className="size-5" />
-              </div>
-              <div className="space-y-1">
-                <CardTitle className="flex items-center gap-2">
-                  {current.label}
-                  {done[current.key] && <StatusBadge value="ready" />}
-                </CardTitle>
-                <CardDescription>{current.description}</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>{renderStep()}</CardContent>
-          <CardFooter className="justify-between border-t">
-            <Button variant="ghost" onClick={goPrev} disabled={currentIndex === 0}>
-              <ArrowLeft className="size-4" />
-              Back
-            </Button>
-            <Button
-              variant="outline"
-              onClick={goNext}
-              disabled={currentIndex === STEPS.length - 1}
-            >
-              Next
-              <ArrowRight className="size-4" />
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    </div>
+    <Card className="shadow-sm">
+      <CardHeader className="border-b bg-secondary/30">
+        <div className="flex items-start gap-3">
+          <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
+            <StepIcon className="size-5" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2">{current.label}</CardTitle>
+            <CardDescription>{current.description}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="min-h-[14rem] py-4">{renderStep()}</CardContent>
+      <CardFooter className="justify-end border-t">
+        {/* No "Back" — the step list in the sidebar already jumps to any past/current step.
+            "Next" stays locked until the current step reports done, so setup can't be raced
+            past a step that hasn't actually been completed yet. Icon-only: the arrow alone is
+            enough once it's the sole action in the footer. */}
+        <Button
+          variant="outline"
+          size="icon"
+          className="rounded-full"
+          aria-label="Next step"
+          title="Next step"
+          onClick={goNext}
+          disabled={currentIndex === STEPS.length - 1 || !done[current.key]}
+        >
+          <ArrowRight className="size-4" />
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

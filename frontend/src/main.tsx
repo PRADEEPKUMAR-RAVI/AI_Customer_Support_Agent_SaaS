@@ -1,5 +1,10 @@
-import "@fontsource-variable/geist/index.css";
-import "@fontsource-variable/geist-mono/index.css";
+import "@fontsource-variable/inter/index.css";
+import "@fontsource/poppins/500.css";
+import "@fontsource/poppins/600.css";
+import "@fontsource/poppins/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import "./styles/globals.css";
 
 import { StrictMode } from "react";

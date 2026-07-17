@@ -38,7 +38,7 @@ const WIDGET_CSS = `
   --destructive: oklch(0.577 0.245 27.3);
   --border: color-mix(in oklab, var(--brand-500) 30%, white);
   --radius: 0.5rem;
-  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 @media (prefers-color-scheme: dark) {
   :host {

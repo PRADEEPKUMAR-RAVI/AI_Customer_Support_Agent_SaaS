@@ -5,6 +5,7 @@
 import { Loader2 } from "lucide-react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 
+import { homePathForRole } from "@/app/nav";
 import { Chat } from "@/components/chat";
 import { EmptyState } from "@/components/empty-state";
 import { NoAccessState } from "@/components/no-access-state";
@@ -46,6 +47,20 @@ function RequireAuth() {
   const { authenticated, ready } = useAuth();
   if (!ready) return <FullPageLoader />;
   return authenticated ? <Outlet /> : <Navigate to="/login" replace />;
+}
+
+/** The inverse of `RequireAuth`, guarding every sign-in/sign-up/reset page: an already-signed-in
+ * visitor is bounced straight to their console home instead of ever rendering the page. This is
+ * what actually stops the browser Back button from surfacing "Reset your password" (or Login,
+ * Signup, Verify) after a successful sign-in — `navigate(..., { replace: true })` at each step
+ * only rewrites ONE history entry, so a multi-step flow (forgot -> emailed reset link -> login)
+ * still leaves earlier entries in the stack for Back to walk into. Guarding the routes themselves
+ * closes it regardless of how the URL was reached — Back button, a stale bookmark, or a link
+ * pasted from an old email — matching how Gmail/most SaaS consoles behave. */
+function RequireGuest() {
+  const { authenticated, ready, role } = useAuth();
+  if (!ready) return <FullPageLoader />;
+  return authenticated ? <Navigate to={homePathForRole(role)} replace /> : <Outlet />;
 }
 
 /** Forces admins through /onboarding until the required setup steps are done — derived from
@@ -93,14 +108,16 @@ export function AppRouter() {
       <Route path="/chat/:widgetKey" element={<HostedChat />} />
       <Route path="/" element={<LandingPage />} />
 
-      {/* Full-bleed split layout of its own — not the shared centered AuthLayout column. */}
-      <Route path="/signup" element={<SignupPage />} />
-
-      <Route element={<AuthLayout />}>
+      <Route element={<RequireGuest />}>
+        {/* Full-bleed split layout of their own — not the shared centered AuthLayout column. */}
+        <Route path="/signup" element={<SignupPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/verify" element={<VerifyPage />} />
         <Route path="/forgot" element={<ForgotPage />} />
-        <Route path="/reset" element={<ResetPage />} />
+
+        <Route element={<AuthLayout />}>
+          <Route path="/verify" element={<VerifyPage />} />
+          <Route path="/reset" element={<ResetPage />} />
+        </Route>
       </Route>
 
       <Route element={<RequireAuth />}>

@@ -38,20 +38,24 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
+// React 18 (this app's version) requires forwardRef for a function component to receive a ref —
+// unlike React 19, it does NOT accept `ref` as a plain prop. Radix triggers (`asChild`, e.g.
+// `DropdownMenuTrigger`/`PopoverTrigger`/`TooltipTrigger`) attach a ref to their child to find its
+// DOM node for positioning/open-state; without forwardRef here, that ref silently comes back null
+// and the trigger can fail to open at all. Every `asChild` Button composition in the app depends
+// on this.
+const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<"button"> &
+    VariantProps<typeof buttonVariants> & {
+      asChild?: boolean
+    }
+>(({ className, variant = "default", size = "default", asChild = false, ...props }, ref) => {
   const Comp = asChild ? Slot.Root : "button"
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       data-variant={variant}
       data-size={size}
@@ -59,6 +63,7 @@ function Button({
       {...props}
     />
   )
-}
+})
+Button.displayName = "Button"
 
 export { Button, buttonVariants }

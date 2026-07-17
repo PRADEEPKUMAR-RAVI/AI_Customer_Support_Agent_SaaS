@@ -111,19 +111,19 @@ const SETUP_STEPS: { to: string; icon: LucideIcon; title: string; description: s
 /** Compact quick-start checklist linking to the core setup surfaces. Admin-facing. */
 function GettingStarted() {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="shadow-sm">
+      <CardHeader className="border-b bg-secondary/30">
         <CardTitle>Getting started</CardTitle>
         <CardDescription>Finish setting up your AI support agent.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-0.5">
+      <CardContent className="flex flex-col gap-0.5 pt-6">
         {SETUP_STEPS.map((step) => (
           <Link
             key={step.to}
             to={step.to}
             className="group -mx-2 flex items-start gap-3 rounded-lg p-2.5 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
           >
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground transition-colors group-hover:text-accent-foreground">
+            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-ai-accent/12 text-ai-accent transition-colors group-hover:bg-ai-accent/20">
               <step.icon className="size-4" />
             </span>
             <span className="min-w-0 flex-1">
@@ -306,6 +306,7 @@ export function OverviewPage() {
             value={conversationsValue ?? "—"}
             hint={conversationsHint}
             loading={canAnalytics && overviewQ.isLoading}
+            tone="info"
           />
           <StatTile
             icon={Sparkles}
@@ -313,6 +314,7 @@ export function OverviewPage() {
             value={autoResolvedValue ?? "—"}
             hint="Resolved without a human"
             loading={canAnalytics && overviewQ.isLoading}
+            tone="ai"
           />
           <StatTile
             icon={AlertTriangle}
@@ -320,6 +322,7 @@ export function OverviewPage() {
             value={escalationsValue ?? "—"}
             hint="Awaiting a human agent"
             loading={canTickets && escalationsQ.isLoading}
+            alert={!!escalationsValue && escalationsValue !== "0"}
           />
           <StatTile
             icon={CircleDollarSign}
@@ -327,6 +330,7 @@ export function OverviewPage() {
             value={costValue ?? "—"}
             hint={costHint}
             loading={canAnalytics && costQ.isLoading}
+            tone="success"
           />
         </div>
 
