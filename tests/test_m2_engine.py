@@ -13,7 +13,7 @@ from app.infra.connectors.base import NOT_FOUND, ConnectorError
 from app.infra.llm.base import LLMResult, ToolCall
 from app.schemas.metrics import ModelCost, TurnMetricDTO
 from app.services.ai_engine.engine import run_turn
-from app.services.ai_engine.grounding import decide_outcome
+from app.services.ai_engine.grounding import Outcome, decide_outcome
 from app.services.ai_engine.guardrails import PROACTIVE_OFFER, render_record_answer
 from app.services.ai_engine.structured import clamp_tags
 from app.services.ai_engine.tools.lookup_record import detect_dispute, lookup_record_tool
@@ -317,6 +317,111 @@ async def test_run_turn_declined_offer_still_ungrounded_hands_off(monkeypatch):
                        human_offer_pending=True)
     assert r.escalate is True                                    # already offered once → hand off
     assert r.escalation_reason is EscalationReason.NO_GROUNDING
+
+
+# --- [A3] language rule: code-owned replies reach the customer in THEIR language ---------------
+
+class _LangLLM(_NoGroundLLM):
+    """_NoGroundLLM (→ the code-owned PROACTIVE_OFFER) but reporting a chosen detected_language."""
+
+    def __init__(self, lang: str) -> None:
+        self.lang = lang
+
+    async def complete(self, messages, **kw):
+        if kw.get("response_schema"):
+            return LLMResult(structured={"answer_complete": False, "detected_language": self.lang,
+                                         "tags": [], "advisory_confidence": None}, model="fake")
+        return LLMResult(text="", model="fake")
+
+
+def _patch_langs(monkeypatch, detected: str):
+    """Stub both seams: the engine loop (reports ``detected``) and the translator localize() uses
+    (which lazy-imports get_llm from model_router, so patching engine_mod alone would let a real
+    API call through). Returns the list of texts handed to the translator."""
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _LangLLM(detected))
+    seen: list[str] = []
+
+    class _Translator:
+        supports_tools = supports_structured_output = True
+
+        async def complete(self, messages, **kw):
+            seen.append(messages[-1]["content"])
+            return LLMResult(text="<translated>", model="fake")
+
+    monkeypatch.setattr("app.infra.llm.model_router.get_llm", lambda: _Translator())
+    return seen
+
+
+_HI_CFG = {"supported_languages": ["en", "hi"], "default_language": "en"}
+
+
+async def test_code_owned_reply_is_localized_to_a_supported_language(monkeypatch):
+    """The regression: the engine owns the words on most turns and every canned string is English,
+    so a Hindi customer got an English reply. The code-owned text must be translated on the way out."""
+    seen = _patch_langs(monkeypatch, "hi")
+    r = await run_turn(None, cfg=_HI_CFG, industry="retail", user_text="क्या आप यूनिकॉर्न बेचते हैं?")
+    assert r.detected_language == "hi"
+    assert seen == [PROACTIVE_OFFER]     # the English source went to the translator...
+    assert r.answer == "<translated>"    # ...and the customer got the translation, not English
+
+
+async def test_english_turn_is_not_sent_to_the_translator(monkeypatch):
+    seen = _patch_langs(monkeypatch, "en")
+    r = await run_turn(None, cfg=_HI_CFG, industry="retail", user_text="do you sell unicorns?")
+    assert r.answer == PROACTIVE_OFFER and seen == []   # no needless translation call
+
+
+async def test_bcp47_region_subtag_still_matches_a_supported_language(monkeypatch):
+    """The model may answer BCP-47 'hi-IN' while the tenant configured 'hi'; a raw `in` test would
+    miss and silently fall the customer back to English."""
+    seen = _patch_langs(monkeypatch, "hi-IN")
+    r = await run_turn(None, cfg=_HI_CFG, industry="retail", user_text="क्या आप यूनिकॉर्न बेचते हैं?")
+    assert r.detected_language == "hi-IN" and seen == [PROACTIVE_OFFER]
+
+
+async def test_unsupported_language_falls_back_to_tenant_default(monkeypatch):
+    """[A3]: a language the tenant did NOT configure → reply in default_language (English here),
+    so the translator is never called."""
+    seen = _patch_langs(monkeypatch, "ja")
+    r = await run_turn(None, cfg=_HI_CFG, industry="retail", user_text="ユニコーンを売っていますか?")
+    assert r.detected_language == "en" and r.answer == PROACTIVE_OFFER and seen == []
+
+
+async def test_model_authored_answer_is_not_retranslated(monkeypatch):
+    """The model already replies in the customer's language (the system prompt's language rule), so
+    its text must NOT go through the translator — that would cost a call and paraphrase a grounded
+    fact. Only code-owned English is translated."""
+    seen = _patch_langs(monkeypatch, "hi")
+    hindi = "हमारी वापसी नीति 30 दिनों की है।"
+
+    class _GroundedHindiLLM:
+        supports_tools = supports_structured_output = True
+
+        async def complete(self, messages, **kw):
+            if kw.get("response_schema"):
+                return LLMResult(structured={"answer_complete": True, "detected_language": "hi",
+                                             "tags": [], "advisory_confidence": None}, model="fake")
+            return LLMResult(text=hindi, model="fake")
+
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _GroundedHindiLLM())
+    monkeypatch.setattr(engine_mod, "decide_outcome", lambda **kw: Outcome(
+        answer=kw["model_answer"], escalate=False, reason=None, retrieval_hits=1))
+    r = await run_turn(None, cfg=_HI_CFG, industry="retail", user_text="आपकी वापसी नीति क्या है?")
+    assert r.answer == hindi and seen == []      # relayed untouched, translator never called
+
+
+async def test_translation_failure_falls_back_to_the_english_source(monkeypatch):
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: _LangLLM("hi"))
+
+    class _Boom:
+        supports_tools = supports_structured_output = True
+
+        async def complete(self, messages, **kw):
+            raise RuntimeError("provider down")
+
+    monkeypatch.setattr("app.infra.llm.model_router.get_llm", lambda: _Boom())
+    r = await run_turn(None, cfg=_HI_CFG, industry="retail", user_text="क्या आप यूनिकॉर्न बेचते हैं?")
+    assert r.answer == PROACTIVE_OFFER   # a reply in the wrong language beats no reply
 
 
 # --- [§4.5] deterministic sensitive-intent trigger (tenant sensitive_intent_list) --------------

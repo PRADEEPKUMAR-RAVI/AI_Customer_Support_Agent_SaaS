@@ -35,7 +35,7 @@ from app.schemas.metrics import ModelCost, TurnMetricDTO
 from app.services import escalation_service, knowledge_service, tag_service, ticket_service
 from app.services.ai_engine import engine
 from app.services.analytics_service import record_turn_metric
-from app.services.ai_engine.guardrails import CONTACT_EMAIL_SAVED
+from app.services.ai_engine.guardrails import CONTACT_EMAIL_SAVED, localize
 from app.services.ai_engine.structured import clamp_tags
 from app.schemas.sse import (
     Citation,
@@ -239,8 +239,11 @@ async def _run_and_persist(session, ctx, conv, user_text, client_msg_id, escalat
     # human, acknowledge it deterministically and skip the engine — there's no question to answer,
     # and a code-owned reply can't fabricate a fact. Persisted so a reconnect replays it.
     if captured_email and _looks_like_email(user_text.strip()):
+        # Skips the engine, so localize here too ([A3]) — conv.language is the clamped language from
+        # the earlier turns that got us handed off, so this ack lands in the customer's language.
         return await _persist_simple_ai_turn(
-            session, conv, client_msg_id, CONTACT_EMAIL_SAVED, ticket.state
+            session, conv, client_msg_id,
+            await localize(CONTACT_EMAIL_SAVED, conv.language or "en"), ticket.state,
         )
 
     history = await _load_history(session, conv.id)

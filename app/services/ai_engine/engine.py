@@ -32,6 +32,7 @@ from app.services.ai_engine.guardrails import (
     VERIFY_LOCKED,
     capability_reply,
     delimit_tool_result,
+    localize,
     lookup_retry_prompt,
     out_of_scope_reply,
     slot_fill_prompt,
@@ -65,6 +66,11 @@ class TurnResult:
     # PRD §4.2: the verified-lookup identity {type, key} for the ticket's linked-record pointer.
     # Set ONLY when lookup_record returned status=ok this turn (a verified match); else None.
     verified_record: dict | None = None
+    # Did the CODE author this answer (a canned/schema-built reply) rather than the model? Code text
+    # is always English and must be translated on the way out ([A3]); the model's own text is already
+    # in the customer's language (the system prompt's language rule), so re-translating it would just
+    # cost a call and paraphrase a grounded fact. See run_turn.
+    code_owned: bool = True
     # Cross-turn slot memory {record_type, key_value}: the lookup KEY the customer has given but not
     # yet verified, so the next turn can finish the lookup instead of re-asking. Never the verify
     # value (PII). None once verified / not in a lookup flow. Persisted in the AI message.
@@ -159,7 +165,22 @@ async def _complete_within(llm, messages, *, budget: float, retries: int, **kw):
             attempt += 1
 
 
-async def run_turn(
+async def run_turn(session, **kw) -> TurnResult:
+    """The bounded, grounded turn, then the [A3] language rule applied to the finished text.
+
+    Localizing HERE — at the single exit — rather than at each of the ~10 places that assign
+    ``answer_text`` is what makes the rule hold: the engine owns the words on most turns and every
+    code-owned string is authored in English, so any path that doesn't route through here ships
+    English to a non-English customer. Model-authored text is already in the customer's language and
+    is left alone (``code_owned``).
+    """
+    result = await _run_turn(session, **kw)
+    if result.code_owned:
+        result.answer = await localize(result.answer, result.detected_language)
+    return result
+
+
+async def _run_turn(
     session,
     *,
     cfg: dict,
@@ -444,8 +465,11 @@ async def run_turn(
         offered_human = True
 
     # Language rule ([A3]): reply in the detected language if supported, else the tenant default.
+    # Compare on the PRIMARY subtag: detected_language is BCP-47, so the model may answer "hi-IN"
+    # while the tenant configured "hi" — a raw `in` test would miss and wrongly fall back to English.
     detected = model_meta.detected_language or established_language or default_lang
-    if detected not in supported:
+    _supported = {s.split("-")[0].lower() for s in supported}
+    if detected.split("-")[0].lower() not in _supported:
         detected = default_lang
 
     # Cross-turn slot memory to carry into the next turn: keep the lookup KEY (never the verify
@@ -458,10 +482,17 @@ async def run_turn(
         if _rt and _kv:
             pending_lookup_out = {"record_type": _rt, "key_value": str(_kv)}
 
+    # Every branch above either relayed the model's text verbatim (grounded answer / record phrasing
+    # / smalltalk / capability / out_of_scope) or replaced it with a code-owned string — so one
+    # comparison against the model's text tells localize() which it is, with no flag to thread
+    # through each branch. Empty model text (fake LLM, stall, engine-run lookup) → code-owned.
+    code_owned = answer_text != (model_answer or "").strip()
+
     return TurnResult(
         answer=answer_text,
         citations=outcome.citations,
         detected_language=detected,
+        code_owned=code_owned,
         answer_complete=(model_meta.answer_complete and not escalate),  # escalate dominates [IMP-TKT-3]
         tags_raw=model_meta.tags,
         retrieval_hits=outcome.retrieval_hits,
