@@ -24,7 +24,6 @@ from app.infra.llm.model_router import get_llm
 from app.schemas.records import LookupStatus
 from app.services.ai_engine.grounding import decide_outcome
 from app.services.ai_engine.guardrails import (
-    DISPUTE_HANDOFF,
     ENGINE_GUARD_HANDOFF,
     HUMAN_TAKING_OVER,
     KB_NOT_READY_MSG,
@@ -32,6 +31,7 @@ from app.services.ai_engine.guardrails import (
     VERIFY_LOCKED,
     capability_reply,
     delimit_tool_result,
+    dispute_handoff_message,
     localize,
     lookup_retry_prompt,
     out_of_scope_reply,
@@ -216,10 +216,11 @@ async def _run_turn(
     messages: list[dict] = [{"role": "system", "content": build_system_prompt(cfg, industry=industry)}]
     messages += history or []
     # Cross-turn slot memory: if a record lookup is mid-flight (the customer gave the key on an
-    # earlier turn), re-state it explicitly so the model completes the lookup as soon as the verify
-    # value arrives — it otherwise doesn't reliably stitch a key from an earlier turn to the verify
-    # value given now, and falls back to re-asking for everything.
-    if pending_lookup and pending_lookup.get("key_value"):
+    # earlier turn but hasn't verified yet), re-state it explicitly so the model completes the lookup
+    # as soon as the verify value arrives — it otherwise doesn't reliably stitch a key from an
+    # earlier turn to the verify value given now, and falls back to re-asking for everything. Skipped
+    # once the identity is verified ([Fix 1]) — the note is only useful while a lookup is unfinished.
+    if pending_lookup and pending_lookup.get("key_value") and not pending_lookup.get("verified"):
         _note = slot_progress_note(industry, pending_lookup.get("record_type"),
                                    str(pending_lookup["key_value"]))
         if _note:
@@ -347,11 +348,21 @@ async def _run_turn(
     # record_type/key fall back to the remembered slot state, so once the key was captured on an
     # earlier turn the verify turn needs NOTHING new from the model (record_type + key from memory,
     # email from the message) — the model can whiff entirely and the lookup still completes.
-    _rec_type = model_meta.record_type or (pending_lookup or {}).get("record_type")
+    # `pending_lookup` may hold an in-progress key (given but not yet verified) OR a verified
+    # identity carried from an earlier turn (verified=True), so a FOLLOW-UP lookup — including one
+    # for a DIFFERENT record type, e.g. order -> warranty — reuses the key without re-asking. [Fix 1]
+    _established = pending_lookup or {}
+    # What to look up THIS turn: the model's classification wins; a still-in-progress (unverified)
+    # remembered lookup can also trigger one (the model may whiff on the continuation turn). A
+    # VERIFIED identity does NOT trigger on its own — that would re-answer unprompted — it only
+    # SUPPLIES the key below when the model DOES flag a record question this turn.
+    _rec_type = model_meta.record_type or (
+        None if _established.get("verified") else _established.get("record_type")
+    )
     if record_result is None and _rec_type:
         schema = _record_schema(industry, _rec_type)
         if schema is not None:
-            key_val = model_meta.lookup_key_value or (pending_lookup or {}).get("key_value")
+            key_val = model_meta.lookup_key_value or _established.get("key_value")
             verify_val = model_meta.verify_value
             if not verify_val and any(v.field == "email" for v in schema.verify):
                 verify_val = _find_email_in(history, user_text)  # deterministic email fallback
@@ -409,7 +420,8 @@ async def _run_turn(
     # refund is a dispute only when the KB can't already answer the refund question.
     dispute = record_result.get("dispute") if record_result else None
     if dispute and (dispute != "cancelled_refund" or not grounded_answer):
-        escalate, reason, answer_text = True, EscalationReason.DISPUTE, DISPUTE_HANDOFF
+        # [Fix 2a] tell the customer WHY we're bringing in a human, not a generic line.
+        escalate, reason, answer_text = True, EscalationReason.DISPUTE, dispute_handoff_message(dispute)
 
     # [IMP-ENG-1] unusable control envelope after a retry, and no grounded/record answer to keep →
     # hand to a human instead of shipping defaults on a turn we couldn't reason about.
@@ -475,10 +487,17 @@ async def _run_turn(
     # Cross-turn slot memory to carry into the next turn: keep the lookup KEY (never the verify
     # value — PII) so a follow-up that supplies the verify value can complete the lookup. Cleared
     # once verified, on escalation, or when the turn isn't part of a record-lookup flow.
-    pending_lookup_out: dict | None = None
-    if not verified_record and not escalate and model_meta.turn_type in ("needs_info", "answer"):
-        _rt = model_meta.record_type or (pending_lookup or {}).get("record_type")
-        _kv = model_meta.lookup_key_value or (pending_lookup or {}).get("key_value")
+    # [Fix 1] Persist the verified identity (key only, never the PII verify value) and carry it
+    # forward across later turns, so a follow-up lookup — even for a different record type — reuses
+    # it. An in-progress (unverified) key is still remembered the same way; a verified one is tagged
+    # so it can't trigger an unprompted re-lookup (see the deterministic-completion guard above).
+    pending_lookup_out: dict | None = _established or None
+    if verified_record:
+        pending_lookup_out = {"record_type": verified_record["type"],
+                              "key_value": str(verified_record["key"]), "verified": True}
+    elif not escalate and model_meta.turn_type in ("needs_info", "answer"):
+        _rt = model_meta.record_type or _established.get("record_type")
+        _kv = model_meta.lookup_key_value or _established.get("key_value")
         if _rt and _kv:
             pending_lookup_out = {"record_type": _rt, "key_value": str(_kv)}
 

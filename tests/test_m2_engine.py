@@ -182,8 +182,9 @@ def test_turn_metric_dto_is_the_single_shape():
 
 # --- [A1] deterministic record-state dispute -----------------------------------------------
 
-def test_detect_dispute_covers_the_three_record_states():
-    assert detect_dispute("warranty", {"coverage": "void"}, "is my item covered?") == "void_warranty"
+def test_detect_dispute_covers_the_record_state_disputes():
+    # [Fix 2] A void warranty is answerable data (the bot reports the coverage), NOT a dispute.
+    assert detect_dispute("warranty", {"coverage": "void"}, "is my item covered?") is None
     assert detect_dispute("warranty", {"coverage": "active"}, "is my item covered?") is None
     assert detect_dispute("order", {"status": "delivered"}, "it says delivered but I never got it") == "delivered_not_received"
     assert detect_dispute("order", {"status": "delivered"}, "when will it arrive?") is None  # no dispute intent
@@ -191,7 +192,9 @@ def test_detect_dispute_covers_the_three_record_states():
     assert detect_dispute("order", {"status": "shipped"}, "where is my refund?") is None
 
 
-async def test_lookup_record_ok_flags_void_warranty_dispute():
+async def test_lookup_record_void_warranty_is_answerable_not_a_dispute():
+    # [Fix 2] A void warranty verifies and returns its coverage status so the bot can ANSWER it;
+    # it is no longer flagged as a dispute (which would force a human hand-off).
     warranty = {"serial_no": "S1", "email": "a@x.com", "coverage": "void", "expiry": "2020-01-01"}
     out = await lookup_record_tool(
         None, {"record_type": "warranty", "key": "S1", "verify_value": "a@x.com"},
@@ -199,7 +202,7 @@ async def test_lookup_record_ok_flags_void_warranty_dispute():
     )
     assert out["status"] == "ok"
     assert out["record"]["coverage"] == "void"
-    assert out["dispute"] == "void_warranty"
+    assert out["dispute"] is None
 
 
 # --- [IMP-SEC-6] durable verify-attempt lockout --------------------------------------------
@@ -601,7 +604,9 @@ async def test_engine_completes_lookup_when_verify_arrives_even_if_model_forgets
     assert r.verified_record == {"type": "order", "key": "1005"}   # verified pointer captured
     assert r.escalate is False
     assert "ship" in r.answer.lower()                              # answers with the order status
-    assert r.pending_lookup is None                                # cleared once verified
+    # [Fix 1] the verified identity is now carried forward (key only) so a follow-up lookup — even
+    # for a different record type — can reuse it instead of re-asking.
+    assert r.pending_lookup == {"record_type": "order", "key_value": "1005", "verified": True}
 
 
 async def test_failed_lookup_retries_instead_of_escalating(monkeypatch):
@@ -637,6 +642,76 @@ async def test_engine_completes_lookup_from_model_extracted_values(monkeypatch):
     r = await run_turn(None, cfg=CFG, industry="retail", user_text="my order 1005, email a@b.com")
     assert r.verified_record == {"type": "order", "key": "1005"}
     assert "deliver" in r.answer.lower()
+
+
+async def test_verified_identity_carries_to_followup_lookup_of_another_type(monkeypatch):
+    # [Fix 1] The order was verified earlier (identity remembered). The customer now asks about the
+    # WARRANTY for "the same one" — the model classifies record_type=warranty but does NOT re-extract
+    # the order id or email. The engine must reuse the remembered key (warranty accepts order_id) +
+    # the email from history and complete the lookup, instead of re-asking for details already given.
+    llm = _SlotLLM(turn_type="needs_info", record_type="warranty",
+                   has_key=False, has_verify=False, key_value=None, verify_value=None)
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+    seen = {}
+
+    async def _capture(session, args, **kw):
+        seen.update(args)
+        return {"status": "ok", "record": {"coverage": "active", "expiry": "2027-01-01"},
+                "record_type": "warranty", "dispute": None}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _capture)
+    history = [
+        {"role": "user", "content": "my order id is 1006 and email is emma.brown@example.com"},
+        {"role": "assistant", "content": "Your order has shipped."},
+    ]
+    r = await run_turn(None, cfg=CFG, industry="retail",
+                       user_text="and what about the warranty for the same one?",
+                       history=history,
+                       pending_lookup={"record_type": "order", "key_value": "1006", "verified": True})
+    assert seen == {"record_type": "warranty", "key": "1006", "verify_value": "emma.brown@example.com"}
+    assert r.escalate is False
+    assert r.verified_record == {"type": "warranty", "key": "1006"}
+    assert "active" in r.answer.lower()
+
+
+async def test_verified_identity_does_not_trigger_unprompted_relookup(monkeypatch):
+    # [Fix 1] guard: a carried-forward VERIFIED identity must NOT cause a lookup on a turn where the
+    # customer didn't ask about a record (here: smalltalk) — that would re-answer unprompted. The
+    # identity is still preserved for a genuine follow-up later.
+    llm = _SlotLLM(turn_type="smalltalk", record_type=None,
+                   has_key=False, has_verify=False, key_value=None, verify_value=None)
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+    called = {"n": 0}
+
+    async def _boom(session, args, **kw):
+        called["n"] += 1
+        return {"status": "ok", "record": {"status": "shipped"}, "record_type": "order", "dispute": None}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _boom)
+    r = await run_turn(None, cfg=CFG, industry="retail", user_text="thanks!",
+                       history=[{"role": "user", "content": "email is emma.brown@example.com"}],
+                       pending_lookup={"record_type": "order", "key_value": "1006", "verified": True})
+    assert called["n"] == 0                       # no unprompted lookup on a non-record turn
+    assert r.escalate is False
+    assert r.pending_lookup == {"record_type": "order", "key_value": "1006", "verified": True}
+
+
+async def test_void_warranty_is_answered_not_escalated(monkeypatch):
+    # [Fix 2] A verified warranty whose coverage is void is ANSWERED with its status, not handed off.
+    llm = _SlotLLM(record_type="warranty", has_key=True, has_verify=True,
+                   key_value="1006", verify_value="emma.brown@example.com")
+    monkeypatch.setattr(engine_mod, "get_llm", lambda: llm)
+
+    async def _void(session, args, **kw):
+        return {"status": "ok", "record": {"coverage": "void", "expiry": "2026-12-31"},
+                "record_type": "warranty", "dispute": None}
+
+    monkeypatch.setattr(engine_mod, "lookup_record_tool", _void)
+    r = await run_turn(None, cfg=CFG, industry="retail",
+                       user_text="warranty for order 1006, email emma.brown@example.com")
+    assert r.escalate is False
+    assert "void" in r.answer.lower()
+    assert r.verified_record == {"type": "warranty", "key": "1006"}
 
 
 async def test_capability_relays_natural_reply(monkeypatch):

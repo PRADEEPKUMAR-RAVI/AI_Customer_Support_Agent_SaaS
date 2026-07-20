@@ -27,7 +27,8 @@ CONTACT_EMAIL_SAVED = (
     "Thanks — I've saved your email. A human agent will follow up with you there as soon as "
     "they're available."
 )
-# Deterministic record-state dispute ([A1]) — void warranty / delivered-but-not-received / cancelled-refund.
+# Deterministic record-state dispute ([A1]) — delivered-but-not-received / cancelled-refund. (A void
+# warranty is answered with its coverage status, not disputed — see detect_dispute / [Fix 2].)
 DISPUTE_HANDOFF = (
     "I understand this needs closer attention — I'm connecting you with a human agent who can "
     "look into it for you."
@@ -41,6 +42,23 @@ VERIFY_LOCKED = (
 PROACTIVE_OFFER = "I'm not able to answer that confidently. Would you like me to connect you with a human agent?"
 # Turn-level safety guard fired ([IMP-ENG-3]/[IMP-ENG-1]) — stall/timeout or unusable model envelope.
 ENGINE_GUARD_HANDOFF = "Sorry — I'm having trouble completing that right now, so I'm getting a human to help you."
+
+
+def dispute_handoff_message(dispute: str | None) -> str:
+    """Reason-aware hand-off text for a record-state dispute ([A1] / [Fix 2a]): tell the customer
+    WHY a human is being brought in, rather than a generic line. Falls back to the generic message
+    for any unrecognised dispute."""
+    if dispute == "delivered_not_received":
+        return (
+            "Your order shows as delivered, but I understand you haven't received it — I'm "
+            "connecting you with a specialist who can look into it for you."
+        )
+    if dispute == "cancelled_refund":
+        return (
+            "I see your order was cancelled — for the refund, I'm connecting you with a specialist "
+            "who can help you with that."
+        )
+    return DISPUTE_HANDOFF
 
 
 def delimit_tool_result(tool_name: str, payload: Any, *, tool_call_id: str | None = None) -> dict:

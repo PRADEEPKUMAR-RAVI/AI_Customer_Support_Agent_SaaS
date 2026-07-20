@@ -19,6 +19,11 @@ export interface OnboardingStep {
   hint: string;
   description: string;
   icon: LucideIcon;
+  /** Steps the wizard lets you move past without completing them: a tenant can whitelist embed
+   * origins and invite teammates later from the console, and neither is part of the server-side
+   * `completed` check (`app/api/v1/onboarding.py`). The step's own `done` signal — and its sidebar
+   * checkmark — still reflects whether the work was actually done; this only ungates "Next". */
+  optional?: boolean;
 }
 
 export const STEPS: OnboardingStep[] = [
@@ -63,6 +68,7 @@ export const STEPS: OnboardingStep[] = [
     hint: "Where it runs",
     description: "Whitelist the sites permitted to embed your chat widget. Requests from other origins are refused.",
     icon: Globe,
+    optional: true,
   },
   {
     key: "staff",
@@ -70,6 +76,7 @@ export const STEPS: OnboardingStep[] = [
     hint: "Agents & admins",
     description: "Invite teammates who will handle escalated conversations or manage the account.",
     icon: Users,
+    optional: true,
   },
   {
     key: "embed",

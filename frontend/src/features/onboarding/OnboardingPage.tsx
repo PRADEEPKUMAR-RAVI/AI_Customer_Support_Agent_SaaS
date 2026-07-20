@@ -1275,6 +1275,11 @@ export function OnboardingPage() {
 
   const isLastStep = currentIndex === STEPS.length - 1;
 
+  // Optional steps (allowed domains, invite team — flagged in steps.ts) don't gate "Next": the
+  // user can move on without completing them. Each step's own `done` signal still tracks real
+  // state, so the sidebar checkmarks stay honest.
+  const canAdvance = done[current.key] || !!current.optional;
+
   const goNext = () => {
     if (isLastStep) {
       toast.success("Your AI agent is set up!", {
@@ -1341,7 +1346,7 @@ export function OnboardingPage() {
             aria-label={isLastStep ? "Finish setup" : "Next step"}
             title={isLastStep ? "Finish setup" : "Next step"}
             onClick={goNext}
-            disabled={!done[current.key]}
+            disabled={!canAdvance}
           >
             {isLastStep ? <CheckCircle2 className="size-4" /> : <ArrowRight className="size-4" />}
           </Button>

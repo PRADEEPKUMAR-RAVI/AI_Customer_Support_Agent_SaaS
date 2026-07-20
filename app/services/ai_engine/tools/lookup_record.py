@@ -9,8 +9,9 @@ Two safety behaviours also live here (post-fetch, code-decided):
   * [IMP-SEC-6] a durable per-(tenant, record_type, key) verify-attempt counter (Redis) locks
     further attempts after the industry cap (healthcare = 1, others = 3); a locked key returns
     ``rate_limited`` — indistinguishable across not_found/unverified so it leaks nothing.
-  * [A1] a deterministic record-state ``dispute`` flag (void warranty / delivered-but-not-received
-    / cancelled-order refund) the engine turns into a code-driven escalation.
+  * [A1] a deterministic record-state ``dispute`` flag (delivered-but-not-received / cancelled-order
+    refund) the engine turns into a code-driven escalation. A void warranty is NOT a dispute — its
+    coverage status is answerable, so the bot reports it ([Fix 2]).
 """
 
 from __future__ import annotations
@@ -39,12 +40,13 @@ def _verify_counter_key(tenant_id: str, record_type: str, key: str) -> str:
 def detect_dispute(record_type: str, record: dict, user_text: str) -> str | None:
     """Deterministic record-state dispute reason, or None ([A1]). Pure — no I/O.
 
-    void warranty is a record-state dispute on its own; delivered-but-not-received and
-    cancelled-order refund additionally require the customer to be raising that intent.
+    A "dispute" is a case the bot canNOT settle from the record alone and hands to a human:
+    delivered-but-not-received and cancelled-order refund, each of which also requires the customer
+    to be raising that intent. A VOID warranty is NOT a dispute ([Fix 2]) — the coverage status is
+    answerable data, so the bot simply reports it (the customer can still ask for a human, and the
+    tenant's sensitive-intent keywords still escalate an actual complaint).
     """
     text = (user_text or "").lower()
-    if record_type == "warranty" and str(record.get("coverage", "")).lower() == "void":
-        return "void_warranty"
     if record_type == "order":
         status = str(record.get("status", "")).lower()
         if status == "delivered" and any(k in text for k in _NON_RECEIPT):
